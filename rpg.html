@@ -20,9 +20,16 @@
 
   <main class="game-shell">
     <div class="status-panel">
-      <div class="status-item">
+      <div class="status-item hp-status">
         <span class="label">HP</span>
-        <strong id="hp">10</strong>
+        <div class="hp-wrap">
+          <div class="hp-bar" id="hpBar"><div class="hp-fill" id="hpFill"></div></div>
+          <strong id="hp">10</strong>
+        </div>
+      </div>
+      <div class="status-item">
+        <span class="label">Level</span>
+        <strong id="level">1</strong>
       </div>
       <div class="status-item">
         <span class="label">Mode</span>
