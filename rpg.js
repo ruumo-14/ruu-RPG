@@ -1,322 +1,315 @@
-// rpg.js — ドット絵／回避バトル（簡易）
-// 小さな論理キャンバス(160x120)で描き、CSSで拡大してピクセル化表示
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
 
-(() => {
-  const canvas = document.getElementById('game');
-  const ctx = canvas.getContext('2d');
+const hpEl = document.getElementById("hp");
+const modeEl = document.getElementById("mode");
+const startBtn = document.getElementById("startBtn");
 
-  const hpEl = document.getElementById('hp');
-  const msgEl = document.getElementById('msg');
-  const startBtn = document.getElementById('startBtn');
+const W = canvas.width;
+const H = canvas.height;
 
-  // Audio
+const player = {
+  x: W / 2,
+  y: H - 18,
+  w: 8,
+  h: 8,
+  speed: 1.8,
+  hp: 10,
+  invuln: 0,
+  hitFlash: 0
+};
+
+const enemy = {
+  x: W / 2,
+  y: 18,
+  w: 18,
+  h: 18
+};
+
+const keys = {};
+let bullets = [];
+let running = false;
+let patternIndex = 0;
+let patternTimer = 0;
+let lastTime = 0;
+
+function clamp(v, min, max) {
+  return Math.max(min, Math.min(max, v));
+}
+
+function beep(freq = 440, type = "sine", duration = 0.08, volume = 0.04) {
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
-  const audioCtx = new AudioCtx();
-  function sfx(freq=440, type='sine', dur=0.08, vol=0.08){
-    const now = audioCtx.currentTime;
-    const o = audioCtx.createOscillator();
-    const g = audioCtx.createGain();
-    o.type = type; o.frequency.value = freq;
-    g.gain.setValueAtTime(vol, now);
-    g.gain.exponentialRampToValueAtTime(0.001, now+dur);
-    o.connect(g); g.connect(audioCtx.destination);
-    o.start(now); o.stop(now+dur);
+  if (!AudioCtx) return;
+
+  if (!window.__audioCtx) {
+    window.__audioCtx = new AudioCtx();
   }
 
-  // Logical size
-  const W = canvas.width; // 160
-  const H = canvas.height; // 120
+  const a = window.__audioCtx;
+  const osc = a.createOscillator();
+  const gain = a.createGain();
 
-  // Player (heart)
-  const player = {
-    x: W/2, y: H - 30,
-    w: 6, h: 6, // sprite size in pixels
-    speed: 2.2,
-    hp: 10,
-    invuln: 0 // frames of invulnerability after hit
-  };
+  osc.type = type;
+  osc.frequency.value = freq;
 
-  // Enemy (static top center)
-  const enemy = {
-    x: W/2 - 8, y: 12,
-    w: 16, h: 16,
-    phase: 0
-  };
+  gain.gain.setValueAtTime(volume, a.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, a.currentTime + duration);
 
-  // bullets
-  let bullets = [];
+  osc.connect(gain);
+  gain.connect(a.destination);
+  osc.start();
+  osc.stop(a.currentTime + duration);
+}
 
-  // state
-  let running = false;
-  let last = 0;
-  let patternTimer = 0;
-  let patternIndex = 0;
+const heartSprite = [
+  [0, 0, 1, 1, 0, 0],
+  [0, 1, 1, 1, 1, 0],
+  [1, 1, 1, 1, 1, 1],
+  [1, 1, 1, 1, 1, 1],
+  [0, 1, 1, 1, 1, 0],
+  [0, 0, 1, 1, 0, 0]
+];
 
-  // Input
-  const keys = {};
-  document.addEventListener('keydown', e => {
-    keys[e.key.toLowerCase()] = true;
-    if (audioCtx.state === 'suspended') audioCtx.resume();
-  });
-  document.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+const enemySprite = [
+  [0,0,0,1,1,1,1,0,0,0,1,1,1,1,0,0,0],
+  [0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0],
+  [0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0],
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,1,1,1,1,1,0,0,0,0,0,0,1,1,1,1,1],
+  [1,1,1,1,1,0,0,0,0,0,0,0,0,1,1,1,1],
+  [1,1,1,1,0,0,0,0,0,0,0,0,0,0,1,1,1],
+  [1,1,1,1,1,0,0,0,0,0,0,0,0,1,1,1,1],
+  [1,1,1,1,1,1,0,0,0,0,0,0,1,1,1,1,1],
+  [0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0],
+  [0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0],
+  [0,0,0,1,1,1,1,1,1,1,1,1,1,1,0,0,0],
+  [0,0,0,0,0,1,1,1,1,1,1,1,0,0,0,0,0]
+];
 
-  // Touch and mouse: move player by pointer
-  let pointerDown = false;
-  canvas.addEventListener('mousedown', e => { pointerDown = true; handlePointer(e); if (audioCtx.state==='suspended') audioCtx.resume(); });
-  canvas.addEventListener('mousemove', e => { if (pointerDown) handlePointer(e); });
-  window.addEventListener('mouseup', ()=> pointerDown = false);
-  canvas.addEventListener('touchstart', e => { pointerDown = true; handlePointer(e.touches[0]); }, {passive:false});
-  canvas.addEventListener('touchmove', e => { handlePointer(e.touches[0]); }, {passive:false});
-  canvas.addEventListener('touchend', ()=> pointerDown=false, {passive:false});
-  function handlePointer(ev){
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = W / rect.width;
-    const scaleY = H / rect.height;
-    const cx = (ev.clientX - rect.left) * scaleX;
-    const cy = (ev.clientY - rect.top) * scaleY;
-    player.x = clamp(cx, player.w/2, W - player.w/2);
-    player.y = clamp(cy, player.h/2 + 30, H - player.h/2);
-  }
-
-  function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
-
-  // Pixel sprites: small arrays (colors as hex)
-  // Player heart 6x6 (0 = transparent)
-  const heartSprite = [
-    [0,0,'#ff3366','#ff3366',0,0],
-    [0,'#ff3366','#ff99aa','#ff99aa','#ff3366',0],
-    ['#ff3366','#ff99aa','#ff99aa','#ff99aa','#ff99aa','#ff3366'],
-    ['#ff3366','#ff99aa','#ff99aa','#ff99aa','#ff99aa','#ff3366'],
-    [0,'#ff3366','#ff99aa','#ff99aa','#ff3366',0],
-    [0,0,'#ff3366','#ff3366',0,0]
-  ];
-
-  // Enemy simple 16x16 (two-color)
-  const enemySprite = (() => {
-    const arr = [];
-    for (let y=0;y<16;y++){
-      const row = [];
-      for (let x=0;x<16;x++){
-        const inBody = (x>2 && x<13 && y>2 && y<13);
-        row.push(inBody ? '#ffd166' : 0);
-      }
-      arr.push(row);
-    }
-    // add eyes
-    arr[6][5] = '#222'; arr[6][10] = '#222';
-    return arr;
-  })();
-
-  // draw pixel sprite at (cx,cy) centered. sprite is 2D array; scale=1 means one logical pixel.
-  function drawSprite(sprite, cx, cy, scale=1){
-    const h = sprite.length, w = sprite[0].length;
-    const startX = Math.round(cx - w/2);
-    const startY = Math.round(cy - h/2);
-    for (let y=0;y<h;y++){
-      for (let x=0;x<w;x++){
-        const c = sprite[y][x];
-        if (!c) continue;
-        ctx.fillStyle = c;
-        ctx.fillRect((startX + x) | 0, (startY + y) | 0, Math.max(1, scale), Math.max(1, scale));
-      }
+function drawSprite(sprite, x, y, scale = 1) {
+  for (let iy = 0; iy < sprite.length; iy++) {
+    for (let ix = 0; ix < sprite[iy].length; ix++) {
+      if (!sprite[iy][ix]) continue;
+      ctx.fillStyle = sprite[iy][ix] === 1 ? "#ff6b6b" : "#ffd166";
+      ctx.fillRect(Math.round(x - sprite[iy].length / 2 + ix) * scale, Math.round(y - sprite.length / 2 + iy) * scale, scale, scale);
     }
   }
+}
 
-  // Bullet constructor
-  function spawnBullet(x,y,vx,vy,size=1,damage=1,color='#9bf6ff'){
-    bullets.push({x,y,vx,vy,size,damage,color,life:999});
-  }
+function spawnPattern(index) {
+  const bx = enemy.x;
+  const by = enemy.y + enemy.h / 2;
 
-  // Patterns: each pattern runs for some seconds, spawns bullets in different ways
-  function spawnPattern(id, t){
-    if (id === 0){
-      // single slow homing-ish shots (easy)
-      if (t % 20 === 0){
-        const px = player.x, py = player.y;
-        const ex = enemy.x + 8, ey = enemy.y + 12;
-        const ang = Math.atan2(py - ey, px - ex) + (Math.random()-0.5)*0.4;
-        spawnBullet(ex, ey, Math.cos(ang)*0.9, Math.sin(ang)*0.9, 1.2, 1, '#bde0fe');
-      }
-    } else if (id === 1){
-      // dense rain from top (harder) — many small bullets downward
-      if (t % 6 === 0){
-        for (let i=-2;i<=2;i++){
-          const sx = enemy.x + 8 + i*3 + (Math.random()-0.5)*6;
-          spawnBullet(sx, enemy.y+10, (Math.random()-0.5)*0.3, 1.5 + Math.random()*0.6, 1, 1, '#ffd6a5');
-        }
-      }
-    } else if (id === 2){
-      // rotating circular burst (medium)
-      const angBase = (t/30);
-      if (t % 8 === 0){
-        for (let k=0;k<8;k++){
-          const a = angBase + (k * Math.PI * 2 / 8);
-          spawnBullet(enemy.x+8, enemy.y+8, Math.cos(a)*1.6, Math.sin(a)*1.6, 1.4, 1, '#ffb4a2');
-        }
-      }
-    } else if (id === 3){
-      // focused stream aimed at player, but faster (very dangerous if close)
-      if (t % 4 === 0){
-        const ang = Math.atan2(player.y - (enemy.y+8), player.x - (enemy.x+8)) + (Math.random()-0.5)*0.15;
-        spawnBullet(enemy.x+8, enemy.y+8, Math.cos(ang)*2.2, Math.sin(ang)*2.2, 1.6, 1, '#caffbf');
+  if (index === 0) {
+    // 単発・遅い
+    if (Math.random() < 0.18) {
+      const ang = Math.atan2(player.y - by, player.x - bx);
+      bullets.push({
+        x: bx,
+        y: by,
+        vx: Math.cos(ang) * 1.1,
+        vy: Math.sin(ang) * 1.1,
+        radius: 1.3
+      });
+    }
+  } else if (index === 1) {
+    // 密集
+    if (Math.random() < 0.28) {
+      for (let i = -2; i <= 2; i++) {
+        const spread = i * 0.18;
+        const ang = Math.atan2(player.y - by, player.x - bx) + spread;
+        bullets.push({
+          x: bx,
+          y: by,
+          vx: Math.cos(ang) * 1.5,
+          vy: Math.sin(ang) * 1.5,
+          radius: 1.3
+        });
       }
     }
-  }
-
-  function stepPattern(dt){
-    patternTimer += dt;
-    // every 3.5 seconds change pattern
-    if (patternTimer > 3.5){
-      patternTimer = 0;
-      patternIndex = (patternIndex + 1) % 4;
-      msgEl.textContent = ['Easy','Rain','Burst','Focus'][patternIndex];
-      sfx(880, 'sine', 0.08, 0.06);
-    }
-    // spawn bullets per frame time; use frame counter t
-    spawnPattern(patternIndex, Math.floor(perf/16));
-  }
-
-  // Collision: bullets are points with size; player is a box centered at x,y of size player.w/player.h
-  function update(dt){
-    // control
-    if (keys['arrowleft'] || keys['a']) player.x -= player.speed * dt;
-    if (keys['arrowright'] || keys['d']) player.x += player.speed * dt;
-    if (keys['arrowup'] || keys['w']) player.y -= player.speed * dt;
-    if (keys['arrowdown'] || keys['s']) player.y += player.speed * dt;
-    player.x = clamp(player.x, player.w/2, W - player.w/2);
-    player.y = clamp(player.y, player.h/2 + 20, H - player.h/2);
-
-    // bullets
-    for (let i=bullets.length-1;i>=0;i--){
-      const b = bullets[i];
-      b.x += b.vx * dt;
-      b.y += b.vy * dt;
-      b.life--;
-      // remove if off screen
-      if (b.x < -10 || b.x > W+10 || b.y < -10 || b.y > H+10 || b.life<=0){
-        bullets.splice(i,1); continue;
+  } else if (index === 2) {
+    // 丸い弾幕
+    if (Math.random() < 0.12) {
+      for (let i = 0; i < 8; i++) {
+        const a = (Math.PI * 2 / 8) * i + patternTimer * 0.7;
+        bullets.push({
+          x: bx,
+          y: by,
+          vx: Math.cos(a) * 1.6,
+          vy: Math.sin(a) * 1.6,
+          radius: 1.2
+        });
       }
-      // collision with player
-      if (player.invuln <= 0){
-        const px0 = player.x - player.w/2, px1 = player.x + player.w/2;
-        const py0 = player.y - player.h/2, py1 = player.y + player.h/2;
-        if (b.x > px0 && b.x < px1 && b.y > py0 && b.y < py1){
-          // hit!
-          player.hp -= b.damage;
-          player.invuln = 12; // short invuln frames to prevent instant multiple frames? But we want sometimes to allow many hits:
-          // To allow multiple hits when bullets are dense/overlapping, we set short invuln so close bullets may still hit on subsequent frames.
-          sfx(220, 'sawtooth', 0.06, 0.12);
-          // visual feedback: create small flash by tinting player for a few frames
-          player.hitFlash = 6;
-          // remove bullet on hit
-          bullets.splice(i,1);
-          if (player.hp <= 0){
-            endBattle(false);
-            return;
-          }
+    }
+  } else {
+    // 速い正面集中
+    if (Math.random() < 0.22) {
+      const ang = Math.atan2(player.y - by, player.x - bx) + (Math.random() - 0.5) * 0.3;
+      bullets.push({
+        x: bx,
+        y: by,
+        vx: Math.cos(ang) * 2.2,
+        vy: Math.sin(ang) * 2.2,
+        radius: 1.5
+      });
+    }
+  }
+}
+
+function updatePlayer() {
+  if (keys["arrowleft"] || keys["a"]) player.x -= player.speed;
+  if (keys["arrowright"] || keys["d"]) player.x += player.speed;
+  if (keys["arrowup"] || keys["w"]) player.y -= player.speed;
+  if (keys["arrowdown"] || keys["s"]) player.y += player.speed;
+
+  player.x = clamp(player.x, 6, W - 6);
+  player.y = clamp(player.y, 10, H - 8);
+}
+
+function updateBullets() {
+  for (let i = bullets.length - 1; i >= 0; i--) {
+    const b = bullets[i];
+    b.x += b.vx;
+    b.y += b.vy;
+
+    if (b.x < -10 || b.x > W + 10 || b.y < -10 || b.y > H + 10) {
+      bullets.splice(i, 1);
+      continue;
+    }
+
+    const hit =
+      b.x > player.x - player.w / 2 &&
+      b.x < player.x + player.w / 2 &&
+      b.y > player.y - player.h / 2 &&
+      b.y < player.y + player.h / 2;
+
+    if (hit) {
+      bullets.splice(i, 1);
+      if (player.invuln <= 0) {
+        player.hp -= 1;
+        player.invuln = 18;
+        player.hitFlash = 6;
+        beep(180, "sawtooth", 0.1, 0.05);
+        if (player.hp <= 0) {
+          running = false;
+          modeEl.textContent = "Defeat";
+          beep(70, "square", 0.25, 0.08);
         }
       }
     }
-
-    if (player.invuln > 0) player.invuln -= dt;
-    if (player.hitFlash > 0) player.hitFlash -= dt;
   }
 
-  // render
-  function draw(){
-    // clear small canvas
-    ctx.clearRect(0,0,W,H);
-    // background grid
-    ctx.fillStyle = '#041220';
-    ctx.fillRect(0,0,W,H);
+  if (player.invuln > 0) player.invuln--;
+  if (player.hitFlash > 0) player.hitFlash--;
+}
 
-    // enemy
-    drawSprite(enemySprite, enemy.x+8, enemy.y+8, 1);
+function update(dt) {
+  if (!running) return;
 
-    // bullets
-    for (const b of bullets){
-      ctx.fillStyle = b.color;
-      // draw 1x1 or 2x2 pixels for visibility
-      ctx.fillRect(Math.round(b.x), Math.round(b.y), Math.max(1, Math.round(b.size)), Math.max(1, Math.round(b.size)));
-    }
+  patternTimer += dt;
 
-    // player (heart) with possible flash
-    if (player.hitFlash > 0) {
-      // slightly larger white border when hit
-      ctx.fillStyle = '#fff';
-      ctx.fillRect(Math.round(player.x - player.w/2)-1, Math.round(player.y - player.h/2)-1, player.w+2, player.h+2);
-    }
-    drawSprite(heartSprite, player.x, player.y, 1);
-
-    // UI overlay small
-    ctx.fillStyle = '#ffffffaa';
-    ctx.font = '8px monospace';
-    ctx.fillText(`HP:${player.hp}`, 4, 10);
-    ctx.fillText(`Pattern:${patternIndex}`, 4, 18);
+  if (patternTimer > 70) {
+    patternTimer = 0;
+    patternIndex = (patternIndex + 1) % 4;
+    modeEl.textContent = ["Easy", "Dense", "Orbit", "Focus"][patternIndex];
   }
 
-  // battle control
-  let perf = 0;
-  function loop(ts){
-    if (!running) return;
-    if (!last) last = ts;
-    const dtMs = Math.min(40, ts - last);
-    const dt = dtMs / 16.67; // normalized (1 ~= 60fps)
-    last = ts;
-    perf += dtMs;
-    // update and spawn
-    stepPattern(dtMs/1000);
-    update(dt);
+  if (Math.random() < 0.08) {
+    spawnPattern(patternIndex);
+  }
+
+  updatePlayer();
+  updateBullets();
+  hpEl.textContent = String(player.hp);
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+
+  // 背景
+  ctx.fillStyle = "#06111c";
+  ctx.fillRect(0, 0, W, H);
+
+  // 敵
+  drawSprite(enemySprite, enemy.x, enemy.y, 1);
+
+  // 弾
+  for (const b of bullets) {
+    ctx.fillStyle = "#9be7ff";
+    ctx.fillRect(Math.round(b.x), Math.round(b.y), 2, 2);
+  }
+
+  // プレイヤー
+  if (player.hitFlash > 0) {
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(player.x - 6, player.y - 6, 12, 12);
+  }
+  drawSprite(heartSprite, player.x, player.y, 1);
+
+  // 何もない状態で文字を出す
+  if (!running) {
+    ctx.fillStyle = "rgba(255,255,255,0.85)";
+    ctx.font = "bold 10px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("Press Start", W / 2, H / 2);
+  }
+}
+
+function loop(ts) {
+  if (!running) {
     draw();
     requestAnimationFrame(loop);
+    return;
   }
 
-  function startBattle(){
-    // reset
-    player.hp = 10;
-    player.x = W/2; player.y = H - 30;
-    player.invuln = 0; player.hitFlash = 0;
-    bullets = [];
-    patternTimer = 0; patternIndex = 0;
-    msgEl.textContent = 'Battle!';
-    hpEl.textContent = `HP: ${player.hp}`;
-    running = true;
-    last = 0;
-    sfx(880, 'sine', 0.08, 0.06);
-    requestAnimationFrame(loop);
-    // small intro spawn
-    spawnBullet(enemy.x+8, enemy.y+8, 0, 0.6, 1.2, 1, '#bde0fe');
-  }
+  const dt = Math.min(30, ts - lastTime || 16);
+  lastTime = ts;
 
-  function endBattle(win){
-    running = false;
-    msgEl.textContent = win ? 'Victory!' : 'Defeated';
-    sfx(win?1000:150, 'triangle', 0.24, 0.1);
-    // clear bullets
-    bullets = [];
-  }
-
-  // external controls:
-  startBtn.addEventListener('click', () => {
-    if (audioCtx.state === 'suspended') audioCtx.resume();
-    if (!running) startBattle();
-    else { endBattle(true); } // stop
-  });
-
-  // update HP display periodically
-  setInterval(()=> {
-    hpEl.textContent = `HP: ${player.hp}`;
-  }, 120);
-
-  // keyboard serve: space to start
-  document.addEventListener('keydown', e => {
-    if (e.code === 'Space') {
-      if (!running) startBattle();
-      else endBattle(true);
-      e.preventDefault();
-    }
-  });
-
-  // initial draw
+  update(dt);
   draw();
-})();
+
+  requestAnimationFrame(loop);
+}
+
+function startBattle() {
+  player.x = W / 2;
+  player.y = H - 18;
+  player.hp = 10;
+  player.invuln = 0;
+  player.hitFlash = 0;
+  bullets = [];
+  patternIndex = 0;
+  patternTimer = 0;
+  lastTime = 0;
+  running = true;
+  modeEl.textContent = "Easy";
+  hpEl.textContent = "10";
+  beep(820, "triangle", 0.08, 0.04);
+  requestAnimationFrame(loop);
+}
+
+document.addEventListener("keydown", (e) => {
+  const k = e.key.toLowerCase();
+  if (k === " ") {
+    e.preventDefault();
+    if (!running) startBattle();
+  }
+  keys[k] = true;
+});
+
+document.addEventListener("keyup", (e) => {
+  keys[e.key.toLowerCase()] = false;
+});
+
+startBtn.addEventListener("click", () => {
+  if (!running) startBattle();
+});
+
+document.addEventListener("pointerdown", () => {
+  if (!running) startBattle();
+});
+
+draw();
