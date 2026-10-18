@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>RPG Battle Demo — ドット絵 回避（Undertale風）</title>
+  <link rel="stylesheet" href="rpg.css" />
+</head>
+<body>
+  <header>
+    <h1>Battle: ドット回避デモ</h1>
+    <div class="hud">
+      <span id="hp">HP: 10</span>
+      <span id="msg">Ready</span>
+      <button id="startBtn">Start Battle</button>
+      <a class="back" href="index.html">← Breakout へ戻る</a>
+    </div>
+  </header>
+
+  <main>
+    <!-- 小さい論理キャンバスを拡大してピクセル化表示 -->
+    <div class="canvas-wrap">
+      <canvas id="game" width="160" height="120"></canvas>
+    </div>
+    <p class="hint">矢印キー / WASD でハート移動。クリックで攻撃開始。タッチ対応。</p>
+  </main>
+
+  <footer><small>ドット絵＆弾幕のシンプルデモです。</small></footer>
+  <script src="rpg.js"></script>
+</body>
+</html>
