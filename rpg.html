@@ -14,6 +14,11 @@
     </div>
     <div class="top-actions">
       <button id="startBtn">Start Battle</button>
+      <div class="gold-wrap">
+        <span class="label">GOLD</span>
+        <strong id="gold">0</strong>
+        <button id="shopBtn" class="shop-btn">Shop</button>
+      </div>
       <a href="index.html" class="link-btn">Breakout</a>
     </div>
   </header>
@@ -43,6 +48,19 @@
 
     <p class="hint">矢印キー / WASD で移動。タッチやマウスでも操作できます。スペースで開始。</p>
   </main>
+
+  <!-- Shop modal -->
+  <div id="shopModal" class="modal" aria-hidden="true">
+    <div class="modal-content">
+      <h2>Shop</h2>
+      <div id="shopItems" class="shop-items">
+        <!-- items inserted by JS -->
+      </div>
+      <div class="shop-actions">
+        <button id="closeShop">Close</button>
+      </div>
+    </div>
+  </div>
 
   <script src="rpg.js"></script>
 </body>
