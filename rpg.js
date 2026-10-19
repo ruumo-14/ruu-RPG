@@ -14,6 +14,7 @@ const closeMenuBtn = document.getElementById("closeMenuBtn");
 const closeShop = document.getElementById("closeShop");
 const replayBtn = document.getElementById("replayBtn");
 const goShopBtn = document.getElementById("goShopBtn");
+const shopItemsEl = document.getElementById("shopItems");
 
 const W = canvas.width;
 const H = canvas.height;
@@ -24,8 +25,10 @@ const player = {
   w: 8,
   h: 8,
   speed: 1.8,
+  maxHp: 10,
   hp: 10,
   invuln: 0,
+  invulnDuration: 18,
   hitFlash: 0
 };
 
@@ -39,14 +42,22 @@ const enemy = {
 const keys = {};
 let bullets = [];
 let running = false;
+let paused = false;
 let patternIndex = 0;
 let patternTimer = 0;
 let lastTime = 0;
 let totalGold = 0;
-let battleGold = 0;
+let battleGold = 0; // floating
 let battleGoldTimer = 0;
 let menuOpen = false;
 let deathScreenOpen = false;
+
+// shop upgrades state
+let goldGainMultiplier = 1.0; // up to 3.0
+const goldGainMax = 3.0;
+let invulnIncreaseAmount = 0; // added to invulnDuration (frames)
+const invulnMax = 60; // frames
+let hpIncreaseTotal = 0;
 
 function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
@@ -121,43 +132,53 @@ function setModalVisible(modal, visible) {
 }
 
 function openShop() {
+  // show full-screen shop and pause the battle
   setModalVisible(shopModal, true);
-  setModalVisible(menuModal, false);
-  setModalVisible(deathModal, false);
-  deathScreenOpen = false;
-  running = false;
+  shopModal.querySelector('.modal-content').classList.add('full');
+  paused = true;
   menuOpen = false;
+  deathScreenOpen = false;
+  running = running; // keep running state but paused prevents updates
+  populateShopItems();
 }
 
 function closeShopModal() {
   setModalVisible(shopModal, false);
+  shopModal.querySelector('.modal-content').classList.remove('full');
+  paused = false;
 }
 
 function openMenu() {
   if (!running || deathScreenOpen || menuOpen) return;
   setModalVisible(menuModal, true);
+  paused = true;
   menuOpen = true;
 }
 
 function closeMenu() {
   setModalVisible(menuModal, false);
+  paused = false;
   menuOpen = false;
 }
 
 function showDeathResult() {
-  const earned = battleGold;
+  const earned = Math.floor(battleGold);
   totalGold += earned;
+  battleGold = 0;
+  battleGoldTimer = 0;
   goldEl.textContent = String(totalGold);
   deathGoldEl.textContent = String(earned);
   setModalVisible(deathModal, true);
   setModalVisible(menuModal, false);
   deathScreenOpen = true;
   menuOpen = false;
+  paused = true;
 }
 
 function closeDeathModal() {
   setModalVisible(deathModal, false);
   deathScreenOpen = false;
+  paused = false;
 }
 
 function spawnPattern(index) {
@@ -247,7 +268,7 @@ function updateBullets() {
       bullets.splice(i, 1);
       if (player.invuln <= 0) {
         player.hp -= 1;
-        player.invuln = 18;
+        player.invuln = player.invulnDuration;
         player.hitFlash = 6;
         beep(180, "sawtooth", 0.1, 0.05);
         if (player.hp <= 0) {
@@ -265,15 +286,16 @@ function updateBullets() {
 }
 
 function updateGoldEarned(dt) {
-  battleGoldTimer += dt;
-  while (battleGoldTimer >= 1000) {
-    battleGold += 1;
-    battleGoldTimer -= 1000;
-  }
+  // base rate: 1 gold/sec
+  const baseRate = 1.0;
+  // increase with patternIndex (difficulty/speed)
+  const patternMultiplier = 1 + patternIndex * 0.5; // Easy:1, Dense:1.5, Orbit:2, Focus:2.5
+  const rate = baseRate * patternMultiplier * goldGainMultiplier;
+  battleGold += rate * (dt / 1000);
 }
 
 function update(dt) {
-  if (!running) return;
+  if (!running || paused || deathScreenOpen) return;
 
   patternTimer += dt;
   updateGoldEarned(dt);
@@ -290,7 +312,7 @@ function update(dt) {
 
   updatePlayer();
   updateBullets();
-  hpEl.textContent = String(player.hp);
+  hpEl.textContent = String(player.hp) + "/" + String(player.maxHp);
 }
 
 function draw() {
@@ -311,21 +333,19 @@ function draw() {
   }
   drawSprite(heartSprite, player.x, player.y, 1);
 
-  if (!running && !deathScreenOpen && !menuOpen) {
+  if (!running && !deathScreenOpen && !menuOpen && !paused) {
     ctx.fillStyle = "rgba(255,255,255,0.85)";
     ctx.font = "bold 10px sans-serif";
     ctx.textAlign = "center";
     ctx.fillText("Press Start", W / 2, H / 2);
   }
+
+  // update gold display in real-time
+  let displayGold = totalGold + Math.floor(battleGold);
+  goldEl.textContent = String(displayGold);
 }
 
 function loop(ts) {
-  if (!running) {
-    draw();
-    requestAnimationFrame(loop);
-    return;
-  }
-
   const dt = Math.min(30, ts - lastTime || 16);
   lastTime = ts;
 
@@ -338,8 +358,9 @@ function loop(ts) {
 function startBattle() {
   player.x = W / 2;
   player.y = H - 18;
-  player.hp = 10;
+  player.hp = player.maxHp;
   player.invuln = 0;
+  player.invulnDuration = clamp(18 + invulnIncreaseAmount, 18, invulnMax);
   player.hitFlash = 0;
   bullets = [];
   patternIndex = 0;
@@ -348,14 +369,93 @@ function startBattle() {
   battleGold = 0;
   battleGoldTimer = 0;
   running = true;
+  paused = false;
+  menuOpen = false;
+  deathScreenOpen = false;
   modeEl.textContent = "Easy";
-  hpEl.textContent = "10";
-  closeMenu();
-  closeDeathModal();
-  closeShopModal();
+  hpEl.textContent = String(player.hp) + "/" + String(player.maxHp);
   beep(820, "triangle", 0.08, 0.04);
   requestAnimationFrame(loop);
 }
+
+// Shop logic
+const shopItems = [
+  {
+    id: 'hp+',
+    title: '体力上昇',
+    desc: '+2 最大HP',
+    cost: 10,
+    apply: () => {
+      player.maxHp += 2;
+      player.hp = player.maxHp; // heal to full
+      hpIncreaseTotal += 2;
+    }
+  },
+  {
+    id: 'goldmul',
+    title: 'GOLD獲得量UP',
+    desc: '+0.25 獲得倍率 (最大 x3)',
+    cost: 20,
+    apply: () => {
+      goldGainMultiplier = Math.min(goldGainMax, +(goldGainMultiplier + 0.25).toFixed(2));
+    }
+  },
+  {
+    id: 'invuln',
+    title: '無敵時間上昇',
+    desc: '+6 フレーム (上限あり)',
+    cost: 15,
+    apply: () => {
+      invulnIncreaseAmount = Math.min(invulnMax - 18, invulnIncreaseAmount + 6);
+    }
+  }
+];
+
+function populateShopItems() {
+  if (!shopItemsEl) return;
+  shopItemsEl.innerHTML = '';
+  for (const it of shopItems) {
+    const row = document.createElement('div');
+    row.style.display = 'flex';
+    row.style.justifyContent = 'space-between';
+    row.style.alignItems = 'center';
+    row.style.padding = '10px 0';
+    row.style.borderBottom = '1px solid rgba(255,255,255,0.04)';
+
+    const left = document.createElement('div');
+    const title = document.createElement('div');
+    title.textContent = it.title + ' - ' + it.desc;
+    left.appendChild(title);
+
+    const right = document.createElement('div');
+    const cost = document.createElement('div');
+    cost.textContent = it.cost + ' G';
+    cost.style.marginRight = '10px';
+    const btn = document.createElement('button');
+    btn.textContent = 'Buy';
+    btn.disabled = totalGold < it.cost;
+    btn.addEventListener('click', () => {
+      if (totalGold >= it.cost) {
+        totalGold -= it.cost;
+        it.apply();
+        // update invulnDuration in case invuln changed
+        player.invulnDuration = clamp(18 + invulnIncreaseAmount, 18, invulnMax);
+        goldEl.textContent = String(totalGold + Math.floor(battleGold));
+        // refresh shop buttons
+        populateShopItems();
+      }
+    });
+
+    right.appendChild(cost);
+    right.appendChild(btn);
+
+    row.appendChild(left);
+    row.appendChild(right);
+    shopItemsEl.appendChild(row);
+  }
+}
+
+// input handlers
 
 document.addEventListener("keydown", (e) => {
   const k = e.key.toLowerCase();
@@ -393,7 +493,7 @@ document.addEventListener("pointerdown", () => {
 });
 
 giveUpBtn.addEventListener("click", () => {
-  running = false;
+  // leave battle and open shop
   closeMenu();
   openShop();
 });
@@ -407,6 +507,7 @@ closeShop.addEventListener("click", () => {
 });
 
 replayBtn.addEventListener("click", () => {
+  closeDeathModal();
   startBattle();
 });
 
@@ -415,6 +516,8 @@ goShopBtn.addEventListener("click", () => {
   openShop();
 });
 
+// initialize display
 goldEl.textContent = String(totalGold);
+hpEl.textContent = String(player.hp) + "/" + String(player.maxHp);
 
-draw();
+requestAnimationFrame(loop);
