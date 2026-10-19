@@ -46,6 +46,7 @@ const keys = {};
 let bullets = [];
 let running = false;
 let paused = false;
+let shopOpen = false;
 let patternIndex = 0;
 let patternTimer = 0;
 let lastTime = 0;
@@ -157,10 +158,13 @@ function showPurchaseEffect(text) {
 }
 
 function openShop() {
-  // show full-screen shop and pause the battle
+  // show full-screen shop and pause/stop the battle
   setModalVisible(shopModal, true);
   shopModal.querySelector('.modal-content').classList.add('full');
+  // stop running to prevent accidental restarts while in shop
+  running = false;
   paused = true;
+  shopOpen = true;
   menuOpen = false;
   deathScreenOpen = false;
   populateShopItems();
@@ -171,10 +175,11 @@ function closeShopModal() {
   setModalVisible(shopModal, false);
   shopModal.querySelector('.modal-content').classList.remove('full');
   paused = false;
+  shopOpen = false;
 }
 
 function openMenu() {
-  if (!running || deathScreenOpen || menuOpen) return;
+  if (!running || deathScreenOpen || menuOpen || shopOpen) return;
   setModalVisible(menuModal, true);
   paused = true;
   menuOpen = true;
@@ -383,6 +388,9 @@ function loop(ts) {
 }
 
 function startBattle() {
+  // don't start a battle if the shop is open
+  if (shopOpen) return;
+
   player.x = W / 2;
   player.y = H - 18;
   player.hp = player.maxHp;
@@ -510,6 +518,7 @@ document.addEventListener("keydown", (e) => {
 
   if (k === "escape") {
     e.preventDefault();
+    if (shopOpen) return; // don't open menu while in shop
     if (running && !deathScreenOpen) {
       if (menuOpen) {
         closeMenu();
@@ -522,7 +531,7 @@ document.addEventListener("keydown", (e) => {
 
   if (k === " ") {
     e.preventDefault();
-    if (!running && !deathScreenOpen) startBattle();
+    if (!running && !deathScreenOpen && !shopOpen) startBattle();
   }
 
   keys[k] = true;
@@ -533,11 +542,11 @@ document.addEventListener("keyup", (e) => {
 });
 
 startBtn.addEventListener("click", () => {
-  if (!running && !deathScreenOpen) startBattle();
+  if (!running && !deathScreenOpen && !shopOpen) startBattle();
 });
 
 document.addEventListener("pointerdown", () => {
-  if (!running && !deathScreenOpen) startBattle();
+  if (!running && !deathScreenOpen && !shopOpen) startBattle();
 });
 
 giveUpBtn.addEventListener("click", () => {
