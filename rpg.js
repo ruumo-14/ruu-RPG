@@ -1,4 +1,4 @@
-// rpg.js — updated: stages & shop price scaling
+// rpg.js — updated: accelerated stage costs, per-stage attack patterns, time-scaling difficulty
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 
@@ -59,6 +59,10 @@ let battleGoldTimer = 0;
 let menuOpen = false;
 let deathScreenOpen = false;
 let currentStage = 0;
+let battleElapsed = 0; // ms elapsed during current battle
+
+// global tuning
+const overallIntensity = 1.25; // makes everything more aggressive overall
 
 // shop upgrades state
 let goldGainMultiplier = 1.0; // up to 3.0
@@ -133,14 +137,14 @@ function drawSprite(sprite, x, y, scale = 1) {
   }
 }
 
-// Stage definitions
+// Stage definitions (attackType: 0=basic,1=spread,2=spiral,3=burst-homing,4=ring-fast,5=boss)
 const stages = [
-  { name: 'Stage 1', unlocked: true, baseCost: 0, cost: 0, difficulty: 1.0, spawnMultiplier: 1.0, speedMultiplier: 1.0 },
-  { name: 'Stage 2', unlocked: false, baseCost: 30, cost: 30, difficulty: 1.2, spawnMultiplier: 1.1, speedMultiplier: 1.05 },
-  { name: 'Stage 3', unlocked: false, baseCost: 60, cost: 60, difficulty: 1.5, spawnMultiplier: 1.25, speedMultiplier: 1.15 },
-  { name: 'Stage 4', unlocked: false, baseCost: 120, cost: 120, difficulty: 2.0, spawnMultiplier: 1.5, speedMultiplier: 1.3 },
-  { name: 'Stage 5', unlocked: false, baseCost: 300, cost: 300, difficulty: 3.0, spawnMultiplier: 2.0, speedMultiplier: 1.6 },
-  { name: 'Stage 6', unlocked: false, baseCost: 800, cost: 800, difficulty: 5.0, spawnMultiplier: 3.0, speedMultiplier: 2.0 }
+  { name: 'Stage 1', unlocked: true, baseCost: 0, cost: 0, difficulty: 1.0, spawnMultiplier: 1.0, speedMultiplier: 1.0, attackType: 0 },
+  { name: 'Stage 2', unlocked: false, baseCost: 30, cost: 30, difficulty: 1.2, spawnMultiplier: 1.15, speedMultiplier: 1.05, attackType: 1 },
+  { name: 'Stage 3', unlocked: false, baseCost: 80, cost: 80, difficulty: 1.6, spawnMultiplier: 1.3, speedMultiplier: 1.12, attackType: 2 },
+  { name: 'Stage 4', unlocked: false, baseCost: 220, cost: 220, difficulty: 2.2, spawnMultiplier: 1.6, speedMultiplier: 1.3, attackType: 3 },
+  { name: 'Stage 5', unlocked: false, baseCost: 600, cost: 600, difficulty: 3.5, spawnMultiplier: 2.2, speedMultiplier: 1.6, attackType: 4 },
+  { name: 'Stage 6', unlocked: false, baseCost: 1800, cost: 1800, difficulty: 6.0, spawnMultiplier: 3.2, speedMultiplier: 2.2, attackType: 5 }
 ];
 
 function updateStageLabel() {
@@ -169,9 +173,9 @@ function unlockStage(index) {
   if (remaining > 0) battleGold = Math.max(0, battleGold - remaining);
 
   stages[index].unlocked = true;
-  // increase next stage cost (progressive)
+  // increase next stage cost with accelerating increments (use baseCost * 2^(index))
   if (index + 1 < stages.length) {
-    stages[index + 1].cost = Math.ceil(stages[index + 1].cost * 1.6);
+    stages[index + 1].cost = Math.ceil(stages[index + 1].cost + stages[index + 1].baseCost * Math.pow(2, index));
   }
   populateShopItems();
   updateShopHeader();
@@ -184,6 +188,7 @@ function selectStage(index) {
   currentStage = index;
   updateStageLabel();
   populateStageList();
+  showPurchaseEffect(`選択: ${stages[index].name}`);
   return true;
 }
 
@@ -267,61 +272,92 @@ function closeDeathModal() {
   paused = false;
 }
 
+// Per-stage attack implementations
+function spawnAttackBasic(bx, by, spawnMul, speedMul) {
+  if (Math.random() < 0.18 * spawnMul * overallIntensity) {
+    const ang = Math.atan2(player.y - by, player.x - bx);
+    bullets.push({ x: bx, y: by, vx: Math.cos(ang) * 1.1 * speedMul, vy: Math.sin(ang) * 1.1 * speedMul, radius: 1.3 });
+  }
+}
+
+function spawnAttackSpread(bx, by, spawnMul, speedMul) {
+  if (Math.random() < 0.28 * spawnMul * overallIntensity) {
+    // wider spread than before
+    for (let i = -3; i <= 3; i++) {
+      const spread = i * 0.22;
+      const ang = Math.atan2(player.y - by, player.x - bx) + spread;
+      bullets.push({ x: bx, y: by, vx: Math.cos(ang) * 1.5 * speedMul, vy: Math.sin(ang) * 1.5 * speedMul, radius: 1.3 });
+    }
+  }
+}
+
+function spawnAttackSpiral(bx, by, spawnMul, speedMul) {
+  if (Math.random() < 0.12 * spawnMul * overallIntensity) {
+    const count = 10; // more bullets for spiral
+    for (let i = 0; i < count; i++) {
+      const a = (Math.PI * 2 / count) * i + patternTimer * 1.2;
+      bullets.push({ x: bx, y: by, vx: Math.cos(a) * 1.6 * speedMul, vy: Math.sin(a) * 1.6 * speedMul, radius: 1.2 });
+    }
+  }
+}
+
+function spawnAttackBurstHoming(bx, by, spawnMul, speedMul) {
+  if (Math.random() < 0.22 * spawnMul * overallIntensity) {
+    // burst of fast bullets, a few with homing adjustments
+    for (let i = 0; i < 5; i++) {
+      const ang = Math.atan2(player.y - by, player.x - bx) + (Math.random() - 0.5) * 0.4;
+      bullets.push({ x: bx, y: by, vx: Math.cos(ang) * 2.4 * speedMul, vy: Math.sin(ang) * 2.4 * speedMul, homing: i < 2 ? 0.02 : 0, radius: 1.6 });
+    }
+  }
+}
+
+function spawnAttackRingFast(bx, by, spawnMul, speedMul) {
+  if (Math.random() < 0.14 * spawnMul * overallIntensity) {
+    const count = 16;
+    for (let i = 0; i < count; i++) {
+      const a = (Math.PI * 2 / count) * i + patternTimer * 2.0;
+      bullets.push({ x: bx, y: by, vx: Math.cos(a) * 2.0 * speedMul, vy: Math.sin(a) * 2.0 * speedMul, radius: 1.4 });
+    }
+  }
+}
+
+function spawnAttackBoss(bx, by, spawnMul, speedMul) {
+  // combination: spiral + targeted fast missiles
+  if (Math.random() < 0.35 * spawnMul * overallIntensity) {
+    // targeted missiles
+    for (let i = 0; i < 3; i++) {
+      const ang = Math.atan2(player.y - by, player.x - bx) + (Math.random() - 0.5) * 0.6;
+      bullets.push({ x: bx, y: by, vx: Math.cos(ang) * 2.6 * speedMul, vy: Math.sin(ang) * 2.6 * speedMul, homing: 0.03, radius: 1.8 });
+    }
+  }
+  // occasional large spiral
+  if (Math.random() < 0.18 * spawnMul * overallIntensity) {
+    const count = 20;
+    for (let i = 0; i < count; i++) {
+      const a = (Math.PI * 2 / count) * i + patternTimer * 0.9;
+      bullets.push({ x: bx, y: by, vx: Math.cos(a) * 1.8 * speedMul, vy: Math.sin(a) * 1.8 * speedMul, radius: 1.3 });
+    }
+  }
+}
+
 function spawnPattern(index) {
   const bx = enemy.x;
   const by = enemy.y + enemy.h / 2;
-  const spawnMul = stages[currentStage].spawnMultiplier;
-  const speedMul = stages[currentStage].speedMultiplier;
 
-  if (index === 0) {
-    if (Math.random() < 0.18 * spawnMul) {
-      const ang = Math.atan2(player.y - by, player.x - bx);
-      bullets.push({
-        x: bx,
-        y: by,
-        vx: Math.cos(ang) * 1.1 * speedMul,
-        vy: Math.sin(ang) * 1.1 * speedMul,
-        radius: 1.3
-      });
-    }
-  } else if (index === 1) {
-    if (Math.random() < 0.28 * spawnMul) {
-      for (let i = -2; i <= 2; i++) {
-        const spread = i * 0.18;
-        const ang = Math.atan2(player.y - by, player.x - bx) + spread;
-        bullets.push({
-          x: bx,
-          y: by,
-          vx: Math.cos(ang) * 1.5 * speedMul,
-          vy: Math.sin(ang) * 1.5 * speedMul,
-          radius: 1.3
-        });
-      }
-    }
-  } else if (index === 2) {
-    if (Math.random() < 0.12 * spawnMul) {
-      for (let i = 0; i < 8; i++) {
-        const a = (Math.PI * 2 / 8) * i + patternTimer * 0.7;
-        bullets.push({
-          x: bx,
-          y: by,
-          vx: Math.cos(a) * 1.6 * speedMul,
-          vy: Math.sin(a) * 1.6 * speedMul,
-          radius: 1.2
-        });
-      }
-    }
-  } else {
-    if (Math.random() < 0.22 * spawnMul) {
-      const ang = Math.atan2(player.y - by, player.x - bx) + (Math.random() - 0.5) * 0.3;
-      bullets.push({
-        x: bx,
-        y: by,
-        vx: Math.cos(ang) * 2.2 * speedMul,
-        vy: Math.sin(ang) * 2.2 * speedMul,
-        radius: 1.5
-      });
-    }
+  // time scaling: difficulty slightly ramps up as battle runs
+  const timeScale = 1 + (battleElapsed / 60000) * 0.6; // +60% per minute
+  const spawnMul = stages[currentStage].spawnMultiplier * timeScale;
+  const speedMul = stages[currentStage].speedMultiplier * timeScale;
+  const atkType = stages[currentStage].attackType;
+
+  switch (atkType) {
+    case 0: spawnAttackBasic(bx, by, spawnMul, speedMul); break;
+    case 1: spawnAttackSpread(bx, by, spawnMul, speedMul); break;
+    case 2: spawnAttackSpiral(bx, by, spawnMul, speedMul); break;
+    case 3: spawnAttackBurstHoming(bx, by, spawnMul, speedMul); break;
+    case 4: spawnAttackRingFast(bx, by, spawnMul, speedMul); break;
+    case 5: spawnAttackBoss(bx, by, spawnMul, speedMul); break;
+    default: spawnAttackBasic(bx, by, spawnMul, speedMul); break;
   }
 }
 
@@ -338,6 +374,17 @@ function updatePlayer() {
 function updateBullets() {
   for (let i = bullets.length - 1; i >= 0; i--) {
     const b = bullets[i];
+
+    // homing adjustment if present
+    if (b.homing) {
+      const ang = Math.atan2(player.y - b.y, player.x - b.x);
+      const curAng = Math.atan2(b.vy, b.vx);
+      const newAng = curAng + (ang - curAng) * b.homing; // interpolate a bit
+      const speed = Math.hypot(b.vx, b.vy);
+      b.vx = Math.cos(newAng) * speed;
+      b.vy = Math.sin(newAng) * speed;
+    }
+
     b.x += b.vx;
     b.y += b.vy;
 
@@ -376,9 +423,9 @@ function updateBullets() {
 function updateGoldEarned(dt) {
   const baseRate = 1.0;
   const patternMultiplier = 1 + patternIndex * 0.5;
-  // apply stage difficulty
   const stageDifficulty = stages[currentStage].difficulty;
-  const rate = baseRate * patternMultiplier * goldGainMultiplier * stageDifficulty;
+  const timeScale = 1 + (battleElapsed / 60000) * 0.6;
+  const rate = baseRate * patternMultiplier * goldGainMultiplier * stageDifficulty * timeScale;
   battleGold += rate * (dt / 1000);
 }
 
@@ -395,6 +442,7 @@ function update(dt) {
 
   if (!running || paused) return;
 
+  battleElapsed += dt;
   patternTimer += dt;
   updateGoldEarned(dt);
 
@@ -404,7 +452,8 @@ function update(dt) {
     modeEl.textContent = ["Easy", "Dense", "Orbit", "Focus"][patternIndex];
   }
 
-  if (Math.random() < 0.08) {
+  // spawn chance is now stronger overall
+  if (Math.random() < 0.08 * overallIntensity) {
     spawnPattern(patternIndex);
   }
 
@@ -468,6 +517,7 @@ function startBattle() {
   lastTime = 0;
   battleGold = 0;
   battleGoldTimer = 0;
+  battleElapsed = 0;
   running = true;
   paused = false;
   menuOpen = false;
@@ -619,8 +669,8 @@ function populateShopItems() {
 
       it.apply();
       it.purchased = (it.purchased || 0) + 1;
-      // increase price after purchase
-      it.cost = Math.ceil(it.cost * it.costFactor);
+      // increase price after purchase (scaling factor)
+      it.cost = Math.ceil(it.cost * it.costFactor + it.cost);
       // reflect immediate invuln change
       player.invulnDuration = clamp(18 + invulnIncreaseAmount, 18, invulnMax);
       goldEl.textContent = String(totalGold + Math.floor(battleGold));
