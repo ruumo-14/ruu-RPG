@@ -31,8 +31,8 @@ const player = {
   w: 8,
   h: 8,
   speed: 1.8,
-  maxHp: 10,
-  hp: 10,
+  maxHp: 1,
+  hp: 1,
   invuln: 0,
   invulnDuration: 18,
   hitFlash: 0
@@ -116,7 +116,7 @@ const enemySprite = [
   [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
   [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
   [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-  [1,1,1,1,1,1,0,0,0,0,0,0,1,1,1,1,1],
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
   [1,1,1,1,1,0,0,0,0,0,0,0,0,1,1,1,1],
   [1,1,1,1,0,0,0,0,0,0,0,0,0,0,1,1,1],
   [1,1,1,1,1,0,0,0,0,0,0,0,0,1,1,1,1],
@@ -433,9 +433,8 @@ function update(dt) {
   // if death screen, nothing
   if (deathScreenOpen) return;
 
-  // if shop is open, only update gold accumulation and header
+  // if shop is open, do not accumulate gold; only update header
   if (shopOpen) {
-    updateGoldEarned(dt);
     updateShopHeader();
     return;
   }
