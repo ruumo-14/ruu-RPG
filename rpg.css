@@ -1,3 +1,4 @@
+/* rpg.css updates for stage/shop visuals */
 :root{
   --bg:#08121a;
   --panel:#0f1724;
@@ -47,6 +48,7 @@ header{
   gap:10px;
   align-items:center;
 }
+.status-mini{display:flex;align-items:center;gap:6px}
 button, .link-btn{
   border:1px solid var(--line);
   background:var(--panel2);
@@ -153,7 +155,6 @@ canvas{
 .gold-wrap .label {
   margin-bottom: 0;
 }
-/* full-screen shop modal content */
 .modal-content.full {
   width: 100%;
   height: 100%;
@@ -189,6 +190,9 @@ canvas{
   transform: translateY(-30px);
   opacity: 0;
 }
+.stage-list { margin-top:8px }
+.stage-row { border-bottom:1px solid rgba(255,255,255,0.03); padding:6px 0 }
+.stage-row button[disabled] { opacity: 0.5 }
 @media (max-width:640px){
   header{
     flex-direction:column;
@@ -199,4 +203,3 @@ canvas{
     justify-content:space-between;
   }
 }
-

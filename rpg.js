@@ -1,3 +1,4 @@
+// rpg.js — updated: stages & shop price scaling
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 
@@ -18,6 +19,8 @@ const shopItemsEl = document.getElementById("shopItems");
 const shopGoldDisplay = document.getElementById("shopGoldDisplay");
 const invulnDisplay = document.getElementById("invulnDisplay");
 const shopEffects = document.getElementById("shopEffects");
+const stageListEl = document.getElementById("stageList");
+const stageLabel = document.getElementById("stageLabel");
 
 const W = canvas.width;
 const H = canvas.height;
@@ -55,6 +58,7 @@ let battleGold = 0; // floating
 let battleGoldTimer = 0;
 let menuOpen = false;
 let deathScreenOpen = false;
+let currentStage = 0;
 
 // shop upgrades state
 let goldGainMultiplier = 1.0; // up to 3.0
@@ -129,6 +133,60 @@ function drawSprite(sprite, x, y, scale = 1) {
   }
 }
 
+// Stage definitions
+const stages = [
+  { name: 'Stage 1', unlocked: true, baseCost: 0, cost: 0, difficulty: 1.0, spawnMultiplier: 1.0, speedMultiplier: 1.0 },
+  { name: 'Stage 2', unlocked: false, baseCost: 30, cost: 30, difficulty: 1.2, spawnMultiplier: 1.1, speedMultiplier: 1.05 },
+  { name: 'Stage 3', unlocked: false, baseCost: 60, cost: 60, difficulty: 1.5, spawnMultiplier: 1.25, speedMultiplier: 1.15 },
+  { name: 'Stage 4', unlocked: false, baseCost: 120, cost: 120, difficulty: 2.0, spawnMultiplier: 1.5, speedMultiplier: 1.3 },
+  { name: 'Stage 5', unlocked: false, baseCost: 300, cost: 300, difficulty: 3.0, spawnMultiplier: 2.0, speedMultiplier: 1.6 },
+  { name: 'Stage 6', unlocked: false, baseCost: 800, cost: 800, difficulty: 5.0, spawnMultiplier: 3.0, speedMultiplier: 2.0 }
+];
+
+function updateStageLabel() {
+  stageLabel.textContent = String(currentStage + 1);
+}
+
+function unlockStage(index) {
+  if (index <= 0 || index >= stages.length) return false;
+  // only allow unlocking the next stage in order
+  let highest = 0;
+  for (let i = 0; i < stages.length; i++) if (stages[i].unlocked) highest = i;
+  if (index !== highest + 1) return false;
+
+  const cost = stages[index].cost;
+  const available = totalGold + Math.floor(battleGold);
+  if (available < cost) return false;
+
+  let remaining = cost;
+  if (totalGold >= remaining) {
+    totalGold -= remaining;
+    remaining = 0;
+  } else {
+    remaining -= totalGold;
+    totalGold = 0;
+  }
+  if (remaining > 0) battleGold = Math.max(0, battleGold - remaining);
+
+  stages[index].unlocked = true;
+  // increase next stage cost (progressive)
+  if (index + 1 < stages.length) {
+    stages[index + 1].cost = Math.ceil(stages[index + 1].cost * 1.6);
+  }
+  populateShopItems();
+  updateShopHeader();
+  showPurchaseEffect(`ステージ解放: ${stages[index].name}`);
+  return true;
+}
+
+function selectStage(index) {
+  if (!stages[index] || !stages[index].unlocked) return false;
+  currentStage = index;
+  updateStageLabel();
+  populateStageList();
+  return true;
+}
+
 function setModalVisible(modal, visible) {
   if (!modal) return;
   modal.classList.toggle("show", visible);
@@ -150,7 +208,6 @@ function showPurchaseEffect(text) {
   el.className = 'purchase-effect';
   el.textContent = text;
   shopEffects.appendChild(el);
-  // trigger animation (CSS handles it); remove after 1.2s
   setTimeout(() => {
     el.classList.add('fade');
     setTimeout(() => el.remove(), 600);
@@ -158,16 +215,15 @@ function showPurchaseEffect(text) {
 }
 
 function openShop() {
-  // show full-screen shop and pause/stop the battle
   setModalVisible(shopModal, true);
   shopModal.querySelector('.modal-content').classList.add('full');
-  // stop running to prevent accidental restarts while in shop
-  running = false;
+  running = false; // stop battle while in shop
   paused = true;
   shopOpen = true;
   menuOpen = false;
   deathScreenOpen = false;
   populateShopItems();
+  populateStageList();
   updateShopHeader();
 }
 
@@ -214,53 +270,55 @@ function closeDeathModal() {
 function spawnPattern(index) {
   const bx = enemy.x;
   const by = enemy.y + enemy.h / 2;
+  const spawnMul = stages[currentStage].spawnMultiplier;
+  const speedMul = stages[currentStage].speedMultiplier;
 
   if (index === 0) {
-    if (Math.random() < 0.18) {
+    if (Math.random() < 0.18 * spawnMul) {
       const ang = Math.atan2(player.y - by, player.x - bx);
       bullets.push({
         x: bx,
         y: by,
-        vx: Math.cos(ang) * 1.1,
-        vy: Math.sin(ang) * 1.1,
+        vx: Math.cos(ang) * 1.1 * speedMul,
+        vy: Math.sin(ang) * 1.1 * speedMul,
         radius: 1.3
       });
     }
   } else if (index === 1) {
-    if (Math.random() < 0.28) {
+    if (Math.random() < 0.28 * spawnMul) {
       for (let i = -2; i <= 2; i++) {
         const spread = i * 0.18;
         const ang = Math.atan2(player.y - by, player.x - bx) + spread;
         bullets.push({
           x: bx,
           y: by,
-          vx: Math.cos(ang) * 1.5,
-          vy: Math.sin(ang) * 1.5,
+          vx: Math.cos(ang) * 1.5 * speedMul,
+          vy: Math.sin(ang) * 1.5 * speedMul,
           radius: 1.3
         });
       }
     }
   } else if (index === 2) {
-    if (Math.random() < 0.12) {
+    if (Math.random() < 0.12 * spawnMul) {
       for (let i = 0; i < 8; i++) {
         const a = (Math.PI * 2 / 8) * i + patternTimer * 0.7;
         bullets.push({
           x: bx,
           y: by,
-          vx: Math.cos(a) * 1.6,
-          vy: Math.sin(a) * 1.6,
+          vx: Math.cos(a) * 1.6 * speedMul,
+          vy: Math.sin(a) * 1.6 * speedMul,
           radius: 1.2
         });
       }
     }
   } else {
-    if (Math.random() < 0.22) {
+    if (Math.random() < 0.22 * spawnMul) {
       const ang = Math.atan2(player.y - by, player.x - bx) + (Math.random() - 0.5) * 0.3;
       bullets.push({
         x: bx,
         y: by,
-        vx: Math.cos(ang) * 2.2,
-        vy: Math.sin(ang) * 2.2,
+        vx: Math.cos(ang) * 2.2 * speedMul,
+        vy: Math.sin(ang) * 2.2 * speedMul,
         radius: 1.5
       });
     }
@@ -316,16 +374,26 @@ function updateBullets() {
 }
 
 function updateGoldEarned(dt) {
-  // base rate: 1 gold/sec
   const baseRate = 1.0;
-  // increase with patternIndex (difficulty/speed)
-  const patternMultiplier = 1 + patternIndex * 0.5; // Easy:1, Dense:1.5, Orbit:2, Focus:2.5
-  const rate = baseRate * patternMultiplier * goldGainMultiplier;
+  const patternMultiplier = 1 + patternIndex * 0.5;
+  // apply stage difficulty
+  const stageDifficulty = stages[currentStage].difficulty;
+  const rate = baseRate * patternMultiplier * goldGainMultiplier * stageDifficulty;
   battleGold += rate * (dt / 1000);
 }
 
 function update(dt) {
-  if (!running || paused || deathScreenOpen) return;
+  // if death screen, nothing
+  if (deathScreenOpen) return;
+
+  // if shop is open, only update gold accumulation and header
+  if (shopOpen) {
+    updateGoldEarned(dt);
+    updateShopHeader();
+    return;
+  }
+
+  if (!running || paused) return;
 
   patternTimer += dt;
   updateGoldEarned(dt);
@@ -363,17 +431,15 @@ function draw() {
   }
   drawSprite(heartSprite, player.x, player.y, 1);
 
-  if (!running && !deathScreenOpen && !menuOpen && !paused) {
+  if (!running && !deathScreenOpen && !menuOpen && !paused && !shopOpen) {
     ctx.fillStyle = "rgba(255,255,255,0.85)";
     ctx.font = "bold 10px sans-serif";
     ctx.textAlign = "center";
     ctx.fillText("Press Start", W / 2, H / 2);
   }
 
-  // update gold display in real-time
   let displayGold = totalGold + Math.floor(battleGold);
   goldEl.textContent = String(displayGold);
-  // if shop open, also update header display
   if (shopModal.classList.contains('show')) updateShopHeader();
 }
 
@@ -388,8 +454,7 @@ function loop(ts) {
 }
 
 function startBattle() {
-  // don't start a battle if the shop is open
-  if (shopOpen) return;
+  if (shopOpen) return; // cannot start while shop open
 
   player.x = W / 2;
   player.y = H - 18;
@@ -409,6 +474,7 @@ function startBattle() {
   deathScreenOpen = false;
   modeEl.textContent = "Easy";
   hpEl.textContent = String(player.hp) + "/" + String(player.maxHp);
+  updateStageLabel();
   beep(820, "triangle", 0.08, 0.04);
   requestAnimationFrame(loop);
 }
@@ -420,9 +486,12 @@ const shopItems = [
     title: '体力上昇',
     desc: '+2 最大HP',
     cost: 10,
+    purchased: 0,
+    maxPurchases: 5,
+    costFactor: 1.3,
     apply: () => {
       player.maxHp += 2;
-      player.hp = player.maxHp; // heal to full
+      player.hp = player.maxHp;
       hpIncreaseTotal += 2;
     }
   },
@@ -431,6 +500,9 @@ const shopItems = [
     title: 'GOLD獲得量UP',
     desc: '+0.25 獲得倍率 (最大 x3)',
     cost: 20,
+    purchased: 0,
+    maxPurchases: Math.floor((goldGainMax - 1.0) / 0.25),
+    costFactor: 1.4,
     apply: () => {
       goldGainMultiplier = Math.min(goldGainMax, +(goldGainMultiplier + 0.25).toFixed(2));
     }
@@ -440,11 +512,59 @@ const shopItems = [
     title: '無敵時間上昇',
     desc: '+6 フレーム (上限あり)',
     cost: 15,
+    purchased: 0,
+    maxPurchases: Math.floor((invulnMax - 18) / 6),
+    costFactor: 1.2,
     apply: () => {
       invulnIncreaseAmount = Math.min(invulnMax - 18, invulnIncreaseAmount + 6);
     }
   }
 ];
+
+function populateStageList() {
+  if (!stageListEl) return;
+  stageListEl.innerHTML = '';
+  // determine highest unlocked index
+  let highest = 0; for (let i=0;i<stages.length;i++) if (stages[i].unlocked) highest = i;
+
+  for (let i = 0; i < stages.length; i++) {
+    const s = stages[i];
+    const row = document.createElement('div');
+    row.className = 'stage-row';
+    row.style.display = 'flex';
+    row.style.justifyContent = 'space-between';
+    row.style.alignItems = 'center';
+    row.style.padding = '6px 0';
+
+    const left = document.createElement('div');
+    left.innerHTML = `<strong>${s.name}</strong><div style="font-size:12px;color:var(--muted);">難易度:${s.difficulty.toFixed(1)}</div>`;
+
+    const right = document.createElement('div');
+
+    if (s.unlocked) {
+      const sel = document.createElement('button');
+      sel.textContent = (currentStage === i) ? 'Selected' : 'Select';
+      sel.disabled = (currentStage === i);
+      sel.addEventListener('click', () => { selectStage(i); showPurchaseEffect(`選択: ${s.name}`); });
+      right.appendChild(sel);
+    } else {
+      const btn = document.createElement('button');
+      // only next stage can be purchased
+      btn.disabled = (i !== highest + 1);
+      btn.textContent = `Unlock ${s.cost}G`;
+      btn.addEventListener('click', () => {
+        if (unlockStage(i)) {
+          updateStageLabel();
+        }
+      });
+      right.appendChild(btn);
+    }
+
+    row.appendChild(left);
+    row.appendChild(right);
+    stageListEl.appendChild(row);
+  }
+}
 
 function populateShopItems() {
   if (!shopItemsEl) return;
@@ -463,6 +583,14 @@ function populateShopItems() {
     const title = document.createElement('div');
     title.textContent = it.title + ' - ' + it.desc;
     left.appendChild(title);
+    if (it.maxPurchases) {
+      const rem = it.maxPurchases - it.purchased;
+      const remEl = document.createElement('div');
+      remEl.style.fontSize = '12px';
+      remEl.style.color = 'var(--muted)';
+      remEl.textContent = (rem > 0) ? `残り: ${rem}` : 'MAX';
+      left.appendChild(remEl);
+    }
 
     const right = document.createElement('div');
     const cost = document.createElement('div');
@@ -470,12 +598,10 @@ function populateShopItems() {
     cost.style.marginRight = '10px';
     const btn = document.createElement('button');
 
-    // button disabled if not enough available gold
-    btn.textContent = 'Buy';
-    btn.disabled = available < it.cost;
+    btn.textContent = (it.maxPurchases && it.purchased >= it.maxPurchases) ? 'MAX' : 'Buy';
+    btn.disabled = available < it.cost || (it.maxPurchases && it.purchased >= it.maxPurchases);
 
     btn.addEventListener('click', () => {
-      // recalc available at click time
       const nowAvailable = totalGold + Math.floor(battleGold);
       if (nowAvailable < it.cost) return;
 
@@ -487,19 +613,21 @@ function populateShopItems() {
         remainingCost -= totalGold;
         totalGold = 0;
       }
-      // deduct from battleGold if needed (allow fractional)
       if (remainingCost > 0) {
         battleGold = Math.max(0, battleGold - remainingCost);
       }
 
       it.apply();
-      // update invulnDuration if changed
+      it.purchased = (it.purchased || 0) + 1;
+      // increase price after purchase
+      it.cost = Math.ceil(it.cost * it.costFactor);
+      // reflect immediate invuln change
       player.invulnDuration = clamp(18 + invulnIncreaseAmount, 18, invulnMax);
       goldEl.textContent = String(totalGold + Math.floor(battleGold));
       updateShopHeader();
       showPurchaseEffect(`購入: ${it.title}`);
-      // refresh shop buttons
       populateShopItems();
+      populateStageList();
     });
 
     right.appendChild(cost);
@@ -550,7 +678,6 @@ document.addEventListener("pointerdown", () => {
 });
 
 giveUpBtn.addEventListener("click", () => {
-  // leave battle and open shop
   closeMenu();
   openShop();
 });
@@ -576,5 +703,6 @@ goShopBtn.addEventListener("click", () => {
 // initialize display
 goldEl.textContent = String(totalGold);
 hpEl.textContent = String(player.hp) + "/" + String(player.maxHp);
-
+updateStageLabel();
+populateStageList();
 requestAnimationFrame(loop);

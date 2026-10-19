@@ -18,6 +18,10 @@
         <span class="label">GOLD</span>
         <strong id="gold">0</strong>
       </div>
+      <div class="status-mini">
+        <span class="label">Stage</span>
+        <strong id="stageLabel">1</strong>
+      </div>
       <div class="auth-wrap">
         <span id="userNameDisplay" class="user-name"></span>
         <button id="loginBtn" class="auth-btn">Login</button>
@@ -63,9 +67,22 @@
           <div id="invulnDisplay" style="font-size:12px;color:var(--muted);">無敵時間: 18/60 (3/10)</div>
         </div>
       </div>
-      <div id="shopItems" class="shop-items">
-        <!-- items inserted by JS -->
+
+      <div style="display:flex;gap:20px;margin-top:12px;">
+        <div style="flex:1 1 60%;min-width:200px;">
+          <h3>Items</h3>
+          <div id="shopItems" class="shop-items">
+            <!-- items inserted by JS -->
+          </div>
+        </div>
+        <div style="flex:1 1 40%;min-width:180px;">
+          <h3>Stages</h3>
+          <div id="stageList" class="stage-list">
+            <!-- stages inserted by JS -->
+          </div>
+        </div>
       </div>
+
       <div class="shop-actions">
         <button id="closeShop">Close</button>
       </div>
