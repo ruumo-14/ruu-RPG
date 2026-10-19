@@ -15,6 +15,9 @@ const closeShop = document.getElementById("closeShop");
 const replayBtn = document.getElementById("replayBtn");
 const goShopBtn = document.getElementById("goShopBtn");
 const shopItemsEl = document.getElementById("shopItems");
+const shopGoldDisplay = document.getElementById("shopGoldDisplay");
+const invulnDisplay = document.getElementById("invulnDisplay");
+const shopEffects = document.getElementById("shopEffects");
 
 const W = canvas.width;
 const H = canvas.height;
@@ -91,9 +94,9 @@ const heartSprite = [
   [0, 0, 1, 1, 0, 0],
   [0, 1, 1, 1, 1, 0],
   [1, 1, 1, 1, 1, 1],
-  [1, 1, 1, 1, 1, 1],
-  [0, 1, 1, 1, 1, 0],
-  [0, 0, 1, 1, 0, 0]
+  [1,1,1,1,1,1],
+  [0,1,1,1,1,0],
+  [0,0,1,1,0,0]
 ];
 
 const enemySprite = [
@@ -131,6 +134,28 @@ function setModalVisible(modal, visible) {
   modal.setAttribute("aria-hidden", String(!visible));
 }
 
+function updateShopHeader() {
+  if (!shopGoldDisplay || !invulnDisplay) return;
+  const available = totalGold + Math.floor(battleGold);
+  shopGoldDisplay.textContent = String(available);
+  const currentInv = clamp(18 + invulnIncreaseAmount, 18, invulnMax);
+  const ratio10 = Math.round((currentInv / invulnMax) * 10);
+  invulnDisplay.textContent = `無敵時間: ${currentInv}/${invulnMax} frames (${ratio10}/10)`;
+}
+
+function showPurchaseEffect(text) {
+  if (!shopEffects) return;
+  const el = document.createElement('div');
+  el.className = 'purchase-effect';
+  el.textContent = text;
+  shopEffects.appendChild(el);
+  // trigger animation (CSS handles it); remove after 1.2s
+  setTimeout(() => {
+    el.classList.add('fade');
+    setTimeout(() => el.remove(), 600);
+  }, 800);
+}
+
 function openShop() {
   // show full-screen shop and pause the battle
   setModalVisible(shopModal, true);
@@ -138,8 +163,8 @@ function openShop() {
   paused = true;
   menuOpen = false;
   deathScreenOpen = false;
-  running = running; // keep running state but paused prevents updates
   populateShopItems();
+  updateShopHeader();
 }
 
 function closeShopModal() {
@@ -343,6 +368,8 @@ function draw() {
   // update gold display in real-time
   let displayGold = totalGold + Math.floor(battleGold);
   goldEl.textContent = String(displayGold);
+  // if shop open, also update header display
+  if (shopModal.classList.contains('show')) updateShopHeader();
 }
 
 function loop(ts) {
@@ -414,6 +441,8 @@ const shopItems = [
 function populateShopItems() {
   if (!shopItemsEl) return;
   shopItemsEl.innerHTML = '';
+  const available = totalGold + Math.floor(battleGold);
+
   for (const it of shopItems) {
     const row = document.createElement('div');
     row.style.display = 'flex';
@@ -432,18 +461,37 @@ function populateShopItems() {
     cost.textContent = it.cost + ' G';
     cost.style.marginRight = '10px';
     const btn = document.createElement('button');
+
+    // button disabled if not enough available gold
     btn.textContent = 'Buy';
-    btn.disabled = totalGold < it.cost;
+    btn.disabled = available < it.cost;
+
     btn.addEventListener('click', () => {
-      if (totalGold >= it.cost) {
-        totalGold -= it.cost;
-        it.apply();
-        // update invulnDuration in case invuln changed
-        player.invulnDuration = clamp(18 + invulnIncreaseAmount, 18, invulnMax);
-        goldEl.textContent = String(totalGold + Math.floor(battleGold));
-        // refresh shop buttons
-        populateShopItems();
+      // recalc available at click time
+      const nowAvailable = totalGold + Math.floor(battleGold);
+      if (nowAvailable < it.cost) return;
+
+      let remainingCost = it.cost;
+      if (totalGold >= remainingCost) {
+        totalGold -= remainingCost;
+        remainingCost = 0;
+      } else {
+        remainingCost -= totalGold;
+        totalGold = 0;
       }
+      // deduct from battleGold if needed (allow fractional)
+      if (remainingCost > 0) {
+        battleGold = Math.max(0, battleGold - remainingCost);
+      }
+
+      it.apply();
+      // update invulnDuration if changed
+      player.invulnDuration = clamp(18 + invulnIncreaseAmount, 18, invulnMax);
+      goldEl.textContent = String(totalGold + Math.floor(battleGold));
+      updateShopHeader();
+      showPurchaseEffect(`購入: ${it.title}`);
+      // refresh shop buttons
+      populateShopItems();
     });
 
     right.appendChild(cost);
