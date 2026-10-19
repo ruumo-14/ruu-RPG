@@ -21,6 +21,7 @@ const invulnDisplay = document.getElementById("invulnDisplay");
 const shopEffects = document.getElementById("shopEffects");
 const stageListEl = document.getElementById("stageList");
 const stageLabel = document.getElementById("stageLabel");
+const userNameDisplay = document.getElementById("userNameDisplay");
 
 const W = canvas.width;
 const H = canvas.height;
@@ -252,13 +253,18 @@ function closeMenu() {
   menuOpen = false;
 }
 
-function showDeathResult() {
-  // Reset time-scaling / pattern state so enemy speed doesn't remain increased after death
+// reset time-scaling & pattern state (call on death/start)
+function resetTimeScaling() {
   battleElapsed = 0;
   patternTimer = 0;
   patternIndex = 0;
   bullets = [];
   lastTime = 0;
+}
+
+function showDeathResult() {
+  // ensure time-scaling is reset so enemy speed doesn't carry over
+  resetTimeScaling();
 
   const earned = Math.floor(battleGold);
   totalGold += earned;
@@ -535,6 +541,7 @@ function startBattle() {
   player.invuln = 0;
   player.invulnDuration = clamp(18 + invulnIncreaseAmount, 18, invulnMax);
   player.hitFlash = 0;
+  resetTimeScaling();
   bullets = [];
   patternIndex = 0;
   patternTimer = 0;
@@ -679,9 +686,123 @@ function populateShopItems() {
   }
 }
 
+// ADMIN UI: open auth prompt on Ctrl+Shift+5, if code is 'ruumo' show admin panel
+function openAdminAuth() {
+  try {
+    const code = prompt('管理者コードを入力してください:');
+    if (!code) return;
+    if (code === 'ruumo') {
+      openAdminPanel();
+    } else {
+      alert('コードが間違っています');
+    }
+  } catch (e) {
+    // prompt may be blocked; fallback
+    alert('管理者認証を開けませんでした');
+  }
+}
+
+function openAdminPanel() {
+  // if already open, bring to front
+  let panel = document.getElementById('adminPanel');
+  if (!panel) {
+    panel = document.createElement('div');
+    panel.id = 'adminPanel';
+    panel.style.position = 'fixed';
+    panel.style.left = '50%';
+    panel.style.top = '50%';
+    panel.style.transform = 'translate(-50%,-50%)';
+    panel.style.background = 'rgba(12,12,16,0.98)';
+    panel.style.border = '1px solid rgba(255,255,255,0.06)';
+    panel.style.padding = '12px';
+    panel.style.zIndex = 9999;
+    panel.style.color = '#fff';
+    panel.style.minWidth = '260px';
+    panel.style.borderRadius = '8px';
+
+    const title = document.createElement('div');
+    title.textContent = 'Admin Panel';
+    title.style.fontWeight = 'bold';
+    title.style.marginBottom = '8px';
+    panel.appendChild(title);
+
+    const btnAdd1k = document.createElement('button');
+    btnAdd1k.textContent = '+1000 G';
+    btnAdd1k.style.margin = '4px';
+    btnAdd1k.addEventListener('click', () => { totalGold += 1000; goldEl.textContent = String(totalGold + Math.floor(battleGold)); showPurchaseEffect('Admin: +1000G'); updateShopHeader(); });
+    panel.appendChild(btnAdd1k);
+
+    const btnAdd10k = document.createElement('button');
+    btnAdd10k.textContent = '+10000 G';
+    btnAdd10k.style.margin = '4px';
+    btnAdd10k.addEventListener('click', () => { totalGold += 10000; goldEl.textContent = String(totalGold + Math.floor(battleGold)); showPurchaseEffect('Admin: +10000G'); updateShopHeader(); });
+    panel.appendChild(btnAdd10k);
+
+    const btnMax = document.createElement('button');
+    btnMax.textContent = 'Max GOLD';
+    btnMax.style.margin = '4px';
+    btnMax.addEventListener('click', () => { totalGold = 99999999; goldEl.textContent = String(totalGold + Math.floor(battleGold)); showPurchaseEffect('Admin: MAXG'); updateShopHeader(); });
+    panel.appendChild(btnMax);
+
+    const br = document.createElement('div');
+    br.style.margin = '8px 0';
+    panel.appendChild(br);
+
+    const btnUnlock = document.createElement('button');
+    btnUnlock.textContent = 'Unlock All Stages';
+    btnUnlock.style.display = 'block';
+    btnUnlock.style.marginBottom = '6px';
+    btnUnlock.addEventListener('click', () => {
+      for (let i = 0; i < stages.length; i++) stages[i].unlocked = true;
+      populateStageList();
+      showPurchaseEffect('Admin: All stages unlocked');
+    });
+    panel.appendChild(btnUnlock);
+
+    const btnResetTime = document.createElement('button');
+    btnResetTime.textContent = 'Reset Time-Scaling';
+    btnResetTime.style.display = 'block';
+    btnResetTime.style.marginBottom = '6px';
+    btnResetTime.addEventListener('click', () => { resetTimeScaling(); showPurchaseEffect('Admin: time reset'); });
+    panel.appendChild(btnResetTime);
+
+    const btnKick = document.createElement('button');
+    btnKick.textContent = 'Kick Other User (local)';
+    btnKick.style.display = 'block';
+    btnKick.style.marginBottom = '6px';
+    btnKick.addEventListener('click', () => {
+      // best-effort: if userNameDisplay exists, clear it (simulates kicking other logged-in account)
+      if (userNameDisplay && userNameDisplay.textContent) {
+        const prev = userNameDisplay.textContent;
+        userNameDisplay.textContent = '';
+        showPurchaseEffect(`Admin: kicked ${prev}`);
+      } else {
+        showPurchaseEffect('Admin: no other user found');
+      }
+    });
+    panel.appendChild(btnKick);
+
+    const btnClose = document.createElement('button');
+    btnClose.textContent = 'Close';
+    btnClose.style.display = 'block';
+    btnClose.style.marginTop = '8px';
+    btnClose.addEventListener('click', () => { panel.remove(); });
+    panel.appendChild(btnClose);
+
+    document.body.appendChild(panel);
+  }
+}
+
 // input handlers
 
 document.addEventListener("keydown", (e) => {
+  // Admin hotkey: Ctrl + Shift + 5
+  if (e.ctrlKey && e.shiftKey && (e.key === '5' || e.key === '%')) {
+    e.preventDefault();
+    openAdminAuth();
+    return;
+  }
+
   const k = e.key.toLowerCase();
 
   if (k === "escape") {
