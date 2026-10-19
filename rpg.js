@@ -4,6 +4,16 @@ const ctx = canvas.getContext("2d");
 const hpEl = document.getElementById("hp");
 const modeEl = document.getElementById("mode");
 const startBtn = document.getElementById("startBtn");
+const goldEl = document.getElementById("gold");
+const shopModal = document.getElementById("shopModal");
+const menuModal = document.getElementById("menuModal");
+const deathModal = document.getElementById("deathModal");
+const deathGoldEl = document.getElementById("deathGold");
+const giveUpBtn = document.getElementById("giveUpBtn");
+const closeMenuBtn = document.getElementById("closeMenuBtn");
+const closeShop = document.getElementById("closeShop");
+const replayBtn = document.getElementById("replayBtn");
+const goShopBtn = document.getElementById("goShopBtn");
 
 const W = canvas.width;
 const H = canvas.height;
@@ -32,6 +42,11 @@ let running = false;
 let patternIndex = 0;
 let patternTimer = 0;
 let lastTime = 0;
+let totalGold = 0;
+let battleGold = 0;
+let battleGoldTimer = 0;
+let menuOpen = false;
+let deathScreenOpen = false;
 
 function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
@@ -99,12 +114,57 @@ function drawSprite(sprite, x, y, scale = 1) {
   }
 }
 
+function setModalVisible(modal, visible) {
+  if (!modal) return;
+  modal.classList.toggle("show", visible);
+  modal.setAttribute("aria-hidden", String(!visible));
+}
+
+function openShop() {
+  setModalVisible(shopModal, true);
+  setModalVisible(menuModal, false);
+  setModalVisible(deathModal, false);
+  deathScreenOpen = false;
+  running = false;
+  menuOpen = false;
+}
+
+function closeShopModal() {
+  setModalVisible(shopModal, false);
+}
+
+function openMenu() {
+  if (!running || deathScreenOpen || menuOpen) return;
+  setModalVisible(menuModal, true);
+  menuOpen = true;
+}
+
+function closeMenu() {
+  setModalVisible(menuModal, false);
+  menuOpen = false;
+}
+
+function showDeathResult() {
+  const earned = battleGold;
+  totalGold += earned;
+  goldEl.textContent = String(totalGold);
+  deathGoldEl.textContent = String(earned);
+  setModalVisible(deathModal, true);
+  setModalVisible(menuModal, false);
+  deathScreenOpen = true;
+  menuOpen = false;
+}
+
+function closeDeathModal() {
+  setModalVisible(deathModal, false);
+  deathScreenOpen = false;
+}
+
 function spawnPattern(index) {
   const bx = enemy.x;
   const by = enemy.y + enemy.h / 2;
 
   if (index === 0) {
-    // 単発・遅い
     if (Math.random() < 0.18) {
       const ang = Math.atan2(player.y - by, player.x - bx);
       bullets.push({
@@ -116,7 +176,6 @@ function spawnPattern(index) {
       });
     }
   } else if (index === 1) {
-    // 密集
     if (Math.random() < 0.28) {
       for (let i = -2; i <= 2; i++) {
         const spread = i * 0.18;
@@ -131,7 +190,6 @@ function spawnPattern(index) {
       }
     }
   } else if (index === 2) {
-    // 丸い弾幕
     if (Math.random() < 0.12) {
       for (let i = 0; i < 8; i++) {
         const a = (Math.PI * 2 / 8) * i + patternTimer * 0.7;
@@ -145,7 +203,6 @@ function spawnPattern(index) {
       }
     }
   } else {
-    // 速い正面集中
     if (Math.random() < 0.22) {
       const ang = Math.atan2(player.y - by, player.x - bx) + (Math.random() - 0.5) * 0.3;
       bullets.push({
@@ -197,6 +254,7 @@ function updateBullets() {
           running = false;
           modeEl.textContent = "Defeat";
           beep(70, "square", 0.25, 0.08);
+          showDeathResult();
         }
       }
     }
@@ -206,10 +264,19 @@ function updateBullets() {
   if (player.hitFlash > 0) player.hitFlash--;
 }
 
+function updateGoldEarned(dt) {
+  battleGoldTimer += dt;
+  while (battleGoldTimer >= 1000) {
+    battleGold += 1;
+    battleGoldTimer -= 1000;
+  }
+}
+
 function update(dt) {
   if (!running) return;
 
   patternTimer += dt;
+  updateGoldEarned(dt);
 
   if (patternTimer > 70) {
     patternTimer = 0;
@@ -228,29 +295,23 @@ function update(dt) {
 
 function draw() {
   ctx.clearRect(0, 0, W, H);
-
-  // 背景
   ctx.fillStyle = "#06111c";
   ctx.fillRect(0, 0, W, H);
 
-  // 敵
   drawSprite(enemySprite, enemy.x, enemy.y, 1);
 
-  // 弾
   for (const b of bullets) {
     ctx.fillStyle = "#9be7ff";
     ctx.fillRect(Math.round(b.x), Math.round(b.y), 2, 2);
   }
 
-  // プレイヤー
   if (player.hitFlash > 0) {
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(player.x - 6, player.y - 6, 12, 12);
   }
   drawSprite(heartSprite, player.x, player.y, 1);
 
-  // 何もない状態で文字を出す
-  if (!running) {
+  if (!running && !deathScreenOpen && !menuOpen) {
     ctx.fillStyle = "rgba(255,255,255,0.85)";
     ctx.font = "bold 10px sans-serif";
     ctx.textAlign = "center";
@@ -284,19 +345,38 @@ function startBattle() {
   patternIndex = 0;
   patternTimer = 0;
   lastTime = 0;
+  battleGold = 0;
+  battleGoldTimer = 0;
   running = true;
   modeEl.textContent = "Easy";
   hpEl.textContent = "10";
+  closeMenu();
+  closeDeathModal();
+  closeShopModal();
   beep(820, "triangle", 0.08, 0.04);
   requestAnimationFrame(loop);
 }
 
 document.addEventListener("keydown", (e) => {
   const k = e.key.toLowerCase();
+
+  if (k === "escape") {
+    e.preventDefault();
+    if (running && !deathScreenOpen) {
+      if (menuOpen) {
+        closeMenu();
+      } else {
+        openMenu();
+      }
+    }
+    return;
+  }
+
   if (k === " ") {
     e.preventDefault();
-    if (!running) startBattle();
+    if (!running && !deathScreenOpen) startBattle();
   }
+
   keys[k] = true;
 });
 
@@ -305,11 +385,36 @@ document.addEventListener("keyup", (e) => {
 });
 
 startBtn.addEventListener("click", () => {
-  if (!running) startBattle();
+  if (!running && !deathScreenOpen) startBattle();
 });
 
 document.addEventListener("pointerdown", () => {
-  if (!running) startBattle();
+  if (!running && !deathScreenOpen) startBattle();
 });
+
+giveUpBtn.addEventListener("click", () => {
+  running = false;
+  closeMenu();
+  openShop();
+});
+
+closeMenuBtn.addEventListener("click", () => {
+  closeMenu();
+});
+
+closeShop.addEventListener("click", () => {
+  closeShopModal();
+});
+
+replayBtn.addEventListener("click", () => {
+  startBattle();
+});
+
+goShopBtn.addEventListener("click", () => {
+  closeDeathModal();
+  openShop();
+});
+
+goldEl.textContent = String(totalGold);
 
 draw();

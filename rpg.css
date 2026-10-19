@@ -108,6 +108,50 @@ canvas{
   margin:12px 0 0;
   font-size:0.8rem;
 }
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 50;
+}
+.modal.show {
+  display: flex;
+}
+.modal-content {
+  width: min(420px, 100%);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 20px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.35);
+}
+.modal-content h2 {
+  margin: 0;
+  font-size: 1.4rem;
+}
+.modal-actions,
+.shop-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+.gold-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.02);
+}
+.gold-wrap .label {
+  margin-bottom: 0;
+}
 @media (max-width:640px){
   header{
     flex-direction:column;
@@ -118,3 +162,4 @@ canvas{
     justify-content:space-between;
   }
 }
+

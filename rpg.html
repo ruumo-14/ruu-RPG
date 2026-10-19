@@ -17,7 +17,6 @@
       <div class="gold-wrap">
         <span class="label">GOLD</span>
         <strong id="gold">0</strong>
-        <button id="shopBtn" class="shop-btn">Shop</button>
       </div>
       <div class="auth-wrap">
         <span id="userNameDisplay" class="user-name"></span>
@@ -67,6 +66,18 @@
     </div>
   </div>
 
+  <!-- Death result modal -->
+  <div id="deathModal" class="modal" aria-hidden="true">
+    <div class="modal-content">
+      <h2>戦闘終了</h2>
+      <p>今回獲得したGOLD: <strong id="deathGold">0</strong></p>
+      <div class="modal-actions">
+        <button id="goShopBtn">Shopに移動</button>
+        <button id="replayBtn">再戦</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Login / Register modal -->
   <div id="loginModal" class="modal" aria-hidden="true">
     <div class="modal-content">
@@ -100,8 +111,8 @@
     <div class="modal-content">
       <h2>Menu</h2>
       <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px;">
-        <button id="giveUpBtn">Give Up (Go to Shop)</button>
-        <button id="closeMenuBtn">Close</button>
+        <button id="giveUpBtn">戦闘を諦める</button>
+        <button id="closeMenuBtn">戦闘を継続する</button>
       </div>
     </div>
   </div>
