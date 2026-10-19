@@ -140,11 +140,11 @@ function drawSprite(sprite, x, y, scale = 1) {
 // Stage definitions (attackType: 0=basic,1=spread,2=spiral,3=burst-homing,4=ring-fast,5=boss)
 const stages = [
   { name: 'Stage 1', unlocked: true, baseCost: 0, cost: 0, difficulty: 1.0, spawnMultiplier: 1.0, speedMultiplier: 1.0, attackType: 0 },
-  { name: 'Stage 2', unlocked: false, baseCost: 30, cost: 30, difficulty: 1.2, spawnMultiplier: 1.15, speedMultiplier: 1.05, attackType: 1 },
-  { name: 'Stage 3', unlocked: false, baseCost: 80, cost: 80, difficulty: 1.6, spawnMultiplier: 1.3, speedMultiplier: 1.12, attackType: 2 },
-  { name: 'Stage 4', unlocked: false, baseCost: 220, cost: 220, difficulty: 2.2, spawnMultiplier: 1.6, speedMultiplier: 1.3, attackType: 3 },
-  { name: 'Stage 5', unlocked: false, baseCost: 600, cost: 600, difficulty: 3.5, spawnMultiplier: 2.2, speedMultiplier: 1.6, attackType: 4 },
-  { name: 'Stage 6', unlocked: false, baseCost: 1800, cost: 1800, difficulty: 6.0, spawnMultiplier: 3.2, speedMultiplier: 2.2, attackType: 5 }
+  { name: 'Stage 2', unlocked: false, baseCost: 300, cost: 300, difficulty: 1.2, spawnMultiplier: 1.15, speedMultiplier: 1.05, attackType: 1 },
+  { name: 'Stage 3', unlocked: false, baseCost: 800, cost: 800, difficulty: 1.6, spawnMultiplier: 1.3, speedMultiplier: 1.12, attackType: 2 },
+  { name: 'Stage 4', unlocked: false, baseCost: 2200, cost: 2200, difficulty: 2.2, spawnMultiplier: 1.6, speedMultiplier: 1.3, attackType: 3 },
+  { name: 'Stage 5', unlocked: false, baseCost: 6000, cost: 6000, difficulty: 3.5, spawnMultiplier: 2.2, speedMultiplier: 1.6, attackType: 4 },
+  { name: 'Stage 6', unlocked: false, baseCost: 18000, cost: 18000, difficulty: 6.0, spawnMultiplier: 3.2, speedMultiplier: 2.2, attackType: 5 }
 ];
 
 function updateStageLabel() {
@@ -301,6 +301,16 @@ function spawnAttackSpiral(bx, by, spawnMul, speedMul) {
   }
 }
 
+// wide-area attack for Stage 1 enemy
+function spawnAttackWide(bx, by, spawnMul, speedMul) {
+  // full ring but a bit slower, for wide coverage
+  const count = 20;
+  for (let i = 0; i < count; i++) {
+    const a = (Math.PI * 2 / count) * i;
+    bullets.push({ x: bx, y: by, vx: Math.cos(a) * 1.4 * speedMul, vy: Math.sin(a) * 1.4 * speedMul, radius: 1.6 });
+  }
+}
+
 function spawnAttackBurstHoming(bx, by, spawnMul, speedMul) {
   if (Math.random() < 0.22 * spawnMul * overallIntensity) {
     // burst of fast bullets, a few with homing adjustments
@@ -351,7 +361,13 @@ function spawnPattern(index) {
   const atkType = stages[currentStage].attackType;
 
   switch (atkType) {
-    case 0: spawnAttackBasic(bx, by, spawnMul, speedMul); break;
+    case 0:
+      spawnAttackBasic(bx, by, spawnMul, speedMul);
+      // on Stage 1, occasionally do a wide-area attack
+      if (currentStage === 0 && Math.random() < 0.06 * spawnMul * overallIntensity) {
+        spawnAttackWide(bx, by, spawnMul, speedMul);
+      }
+      break;
     case 1: spawnAttackSpread(bx, by, spawnMul, speedMul); break;
     case 2: spawnAttackSpiral(bx, by, spawnMul, speedMul); break;
     case 3: spawnAttackBurstHoming(bx, by, spawnMul, speedMul); break;
@@ -528,22 +544,8 @@ function startBattle() {
   requestAnimationFrame(loop);
 }
 
-// Shop logic
+// Shop logic — removed HP and invuln upgrades, only gold multiplier remains
 const shopItems = [
-  {
-    id: 'hp+',
-    title: '体力上昇',
-    desc: '+2 最大HP',
-    cost: 10,
-    purchased: 0,
-    maxPurchases: 5,
-    costFactor: 1.3,
-    apply: () => {
-      player.maxHp += 2;
-      player.hp = player.maxHp;
-      hpIncreaseTotal += 2;
-    }
-  },
   {
     id: 'goldmul',
     title: 'GOLD獲得量UP',
@@ -554,18 +556,6 @@ const shopItems = [
     costFactor: 1.4,
     apply: () => {
       goldGainMultiplier = Math.min(goldGainMax, +(goldGainMultiplier + 0.25).toFixed(2));
-    }
-  },
-  {
-    id: 'invuln',
-    title: '無敵時間上昇',
-    desc: '+6 フレーム (上限あり)',
-    cost: 15,
-    purchased: 0,
-    maxPurchases: Math.floor((invulnMax - 18) / 6),
-    costFactor: 1.2,
-    apply: () => {
-      invulnIncreaseAmount = Math.min(invulnMax - 18, invulnIncreaseAmount + 6);
     }
   }
 ];
@@ -632,14 +622,6 @@ function populateShopItems() {
     const title = document.createElement('div');
     title.textContent = it.title + ' - ' + it.desc;
     left.appendChild(title);
-    if (it.maxPurchases) {
-      const rem = it.maxPurchases - it.purchased;
-      const remEl = document.createElement('div');
-      remEl.style.fontSize = '12px';
-      remEl.style.color = 'var(--muted)';
-      remEl.textContent = (rem > 0) ? `残り: ${rem}` : 'MAX';
-      left.appendChild(remEl);
-    }
 
     const right = document.createElement('div');
     const cost = document.createElement('div');
