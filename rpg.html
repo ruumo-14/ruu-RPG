@@ -51,7 +51,7 @@
       <canvas id="game" width="160" height="120"></canvas>
     </div>
 
-    <p class="hint">矢印キー / WASD で移動。タッチやマウスでも操作できます。スペースで開始。</p>
+    <p class="hint">矢印キー / WASD で移動。タッチやマウスでも操作できます。スペースで開始。Esc でメニュー。</p>
   </main>
 
   <!-- Shop modal -->
@@ -95,6 +95,18 @@
     </div>
   </div>
 
+  <!-- Menu modal (Esc) -->
+  <div id="menuModal" class="modal" aria-hidden="true">
+    <div class="modal-content">
+      <h2>Menu</h2>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px;">
+        <button id="giveUpBtn">Give Up (Go to Shop)</button>
+        <button id="closeMenuBtn">Close</button>
+      </div>
+    </div>
+  </div>
+
   <script src="rpg.js"></script>
+  <script src="enhancements.js"></script>
 </body>
 </html>
