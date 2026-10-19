@@ -1,4 +1,4 @@
-// rpg.js — updated: accelerated stage costs, per-stage attack patterns, time-scaling difficulty
+// rpg.js — updated: admin, login, shop items, stage gold multipliers, speed adjustments
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 
@@ -61,9 +61,10 @@ let menuOpen = false;
 let deathScreenOpen = false;
 let currentStage = 0;
 let battleElapsed = 0; // ms elapsed during current battle
+let currentUser = null;
 
 // global tuning
-const overallIntensity = 1.25; // makes everything more aggressive overall
+let overallIntensity = 1.25; // now mutable so shop/item can change it
 
 // shop upgrades state
 let goldGainMultiplier = 1.0; // up to 3.0
@@ -139,13 +140,14 @@ function drawSprite(sprite, x, y, scale = 1) {
 }
 
 // Stage definitions (attackType: 0=basic,1=spread,2=spiral,3=burst-homing,4=ring-fast,5=boss)
+// speedMultiplier for stages 2+ reduced so initial bullet speeds are lower than Stage 1
 const stages = [
-  { name: 'Stage 1', unlocked: true, baseCost: 0, cost: 0, difficulty: 1.0, spawnMultiplier: 1.0, speedMultiplier: 1.0, attackType: 0 },
-  { name: 'Stage 2', unlocked: false, baseCost: 300, cost: 300, difficulty: 1.2, spawnMultiplier: 1.15, speedMultiplier: 1.05, attackType: 1 },
-  { name: 'Stage 3', unlocked: false, baseCost: 800, cost: 800, difficulty: 1.6, spawnMultiplier: 1.3, speedMultiplier: 1.12, attackType: 2 },
-  { name: 'Stage 4', unlocked: false, baseCost: 2200, cost: 2200, difficulty: 2.2, spawnMultiplier: 1.6, speedMultiplier: 1.3, attackType: 3 },
-  { name: 'Stage 5', unlocked: false, baseCost: 6000, cost: 6000, difficulty: 3.5, spawnMultiplier: 2.2, speedMultiplier: 1.6, attackType: 4 },
-  { name: 'Stage 6', unlocked: false, baseCost: 18000, cost: 18000, difficulty: 6.0, spawnMultiplier: 3.2, speedMultiplier: 2.2, attackType: 5 }
+  { name: 'Stage 1', unlocked: true, baseCost: 0, cost: 0, difficulty: 1.0, spawnMultiplier: 1.0, speedMultiplier: 1.0, attackType: 0, goldMultiplier: 1.0 },
+  { name: 'Stage 2', unlocked: false, baseCost: 300, cost: 300, difficulty: 1.2, spawnMultiplier: 1.15, speedMultiplier: 0.70, attackType: 1, goldMultiplier: 3.0 },
+  { name: 'Stage 3', unlocked: false, baseCost: 800, cost: 800, difficulty: 1.6, spawnMultiplier: 1.3, speedMultiplier: 0.78, attackType: 2, goldMultiplier: 9.0 },
+  { name: 'Stage 4', unlocked: false, baseCost: 2200, cost: 2200, difficulty: 2.2, spawnMultiplier: 1.6, speedMultiplier: 0.91, attackType: 3, goldMultiplier: 27.0 },
+  { name: 'Stage 5', unlocked: false, baseCost: 6000, cost: 6000, difficulty: 3.5, spawnMultiplier: 2.2, speedMultiplier: 1.12, attackType: 4, goldMultiplier: 81.0 },
+  { name: 'Stage 6', unlocked: false, baseCost: 18000, cost: 18000, difficulty: 6.0, spawnMultiplier: 3.2, speedMultiplier: 1.54, attackType: 5, goldMultiplier: 243.0 }
 ];
 
 function updateStageLabel() {
@@ -221,6 +223,7 @@ function showPurchaseEffect(text) {
 }
 
 function openShop() {
+  if (!currentUser) { openLoginModal(); return; }
   setModalVisible(shopModal, true);
   shopModal.querySelector('.modal-content').classList.add('full');
   running = false; // stop battle while in shop
@@ -454,9 +457,10 @@ function updateGoldEarned(dt) {
   const baseRate = 0.25; // smaller base
   const patternMultiplier = 1 + patternIndex * 0.5;
   const stageDifficulty = stages[currentStage].difficulty;
+  const stageGoldMul = stages[currentStage].goldMultiplier || 1.0;
   // gold grows faster as battle time passes (e.g. +80% per 30s)
   const goldTimeScale = 1 + (battleElapsed / 30000) * 0.8;
-  const rate = baseRate * patternMultiplier * goldGainMultiplier * stageDifficulty * goldTimeScale;
+  const rate = baseRate * patternMultiplier * goldGainMultiplier * stageDifficulty * goldTimeScale * stageGoldMul;
   battleGold += rate * (dt / 1000);
 }
 
@@ -533,6 +537,7 @@ function loop(ts) {
 }
 
 function startBattle() {
+  if (!currentUser) { openLoginModal(); return; }
   if (shopOpen) return; // cannot start while shop open
 
   player.x = W / 2;
@@ -560,7 +565,7 @@ function startBattle() {
   requestAnimationFrame(loop);
 }
 
-// Shop logic — removed HP and invuln upgrades, only gold multiplier remains
+// Shop logic — reintroduce several items (excluding HP/invuln per request). Added player speed and enemy slow items.
 const shopItems = [
   {
     id: 'goldmul',
@@ -572,6 +577,30 @@ const shopItems = [
     costFactor: 1.4,
     apply: () => {
       goldGainMultiplier = Math.min(goldGainMax, +(goldGainMultiplier + 0.25).toFixed(2));
+    }
+  },
+  {
+    id: 'speed+',
+    title: '移動速度上昇',
+    desc: '+0.2 移動速度',
+    cost: 15,
+    purchased: 0,
+    maxPurchases: 5,
+    costFactor: 1.25,
+    apply: () => {
+      player.speed = +(player.speed + 0.2).toFixed(2);
+    }
+  },
+  {
+    id: 'enemySlow',
+    title: '敵の緩和',
+    desc: '敵の攻撃強度を少し下げる',
+    cost: 30,
+    purchased: 0,
+    maxPurchases: 3,
+    costFactor: 1.5,
+    apply: () => {
+      overallIntensity = Math.max(0.5, +(overallIntensity - 0.1).toFixed(2));
     }
   }
 ];
@@ -639,6 +668,15 @@ function populateShopItems() {
     title.textContent = it.title + ' - ' + it.desc;
     left.appendChild(title);
 
+    if (it.maxPurchases) {
+      const rem = it.maxPurchases - it.purchased;
+      const remEl = document.createElement('div');
+      remEl.style.fontSize = '12px';
+      remEl.style.color = 'var(--muted)';
+      remEl.textContent = (rem > 0) ? `残り: ${rem}` : 'MAX';
+      left.appendChild(remEl);
+    }
+
     const right = document.createElement('div');
     const cost = document.createElement('div');
     cost.textContent = it.cost + ' G';
@@ -684,6 +722,86 @@ function populateShopItems() {
     row.appendChild(right);
     shopItemsEl.appendChild(row);
   }
+}
+
+// LOGIN flow — require login on load
+function openLoginModal() {
+  // if already logged in, noop
+  if (currentUser) return;
+  let modal = document.getElementById('loginModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'loginModal';
+    modal.style.position = 'fixed';
+    modal.style.left = '0';
+    modal.style.top = '0';
+    modal.style.right = '0';
+    modal.style.bottom = '0';
+    modal.style.background = 'rgba(0,0,0,0.7)';
+    modal.style.zIndex = 10000;
+    modal.style.display = 'flex';
+    modal.style.alignItems = 'center';
+    modal.style.justifyContent = 'center';
+
+    const box = document.createElement('div');
+    box.style.background = '#fff';
+    box.style.color = '#000';
+    box.style.padding = '16px';
+    box.style.borderRadius = '8px';
+    box.style.minWidth = '260px';
+
+    const title = document.createElement('h3');
+    title.textContent = 'ログイン / 登録';
+    box.appendChild(title);
+
+    const label = document.createElement('div');
+    label.textContent = 'ユーザー名を入力してください。';
+    box.appendChild(label);
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = 'username';
+    input.style.width = '100%';
+    input.style.marginTop = '8px';
+    box.appendChild(input);
+
+    const btn = document.createElement('button');
+    btn.textContent = 'ログイン/登録';
+    btn.style.marginTop = '10px';
+    btn.addEventListener('click', () => {
+      const v = input.value && input.value.trim();
+      if (!v) { alert('ユーザー名を入力してください'); return; }
+      currentUser = v;
+      try { localStorage.setItem('ruu_user', currentUser); } catch (e) {}
+      userNameDisplay.textContent = currentUser;
+      modal.remove();
+      showPurchaseEffect(`Logged in: ${currentUser}`);
+    });
+    box.appendChild(btn);
+
+    const info = document.createElement('div');
+    info.style.fontSize = '12px';
+    info.style.color = '#444';
+    info.style.marginTop = '8px';
+    info.textContent = '※ このサーバーレス実装ではアカウントはローカル保存されます。';
+    box.appendChild(info);
+
+    modal.appendChild(box);
+    document.body.appendChild(modal);
+  }
+}
+
+function ensureLoggedIn() {
+  try {
+    const saved = localStorage.getItem('ruu_user');
+    if (saved) {
+      currentUser = saved;
+      userNameDisplay.textContent = currentUser;
+      return true;
+    }
+  } catch (e) {}
+  openLoginModal();
+  return false;
 }
 
 // ADMIN UI: open auth prompt on Ctrl+Shift+5, if code is 'ruumo' show admin panel
@@ -775,6 +893,8 @@ function openAdminPanel() {
       if (userNameDisplay && userNameDisplay.textContent) {
         const prev = userNameDisplay.textContent;
         userNameDisplay.textContent = '';
+        try { localStorage.removeItem('ruu_user'); } catch(e) {}
+        currentUser = null;
         showPurchaseEffect(`Admin: kicked ${prev}`);
       } else {
         showPurchaseEffect('Admin: no other user found');
@@ -831,10 +951,12 @@ document.addEventListener("keyup", (e) => {
 });
 
 startBtn.addEventListener("click", () => {
+  if (!currentUser) { openLoginModal(); return; }
   if (!running && !deathScreenOpen && !shopOpen) startBattle();
 });
 
 document.addEventListener("pointerdown", () => {
+  if (!currentUser) { openLoginModal(); return; }
   if (!running && !deathScreenOpen && !shopOpen) startBattle();
 });
 
@@ -866,4 +988,6 @@ goldEl.textContent = String(totalGold);
 hpEl.textContent = String(player.hp) + "/" + String(player.maxHp);
 updateStageLabel();
 populateStageList();
+// ensure login before allowing play
+ensureLoggedIn();
 requestAnimationFrame(loop);
