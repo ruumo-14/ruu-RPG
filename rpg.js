@@ -253,6 +253,13 @@ function closeMenu() {
 }
 
 function showDeathResult() {
+  // Reset time-scaling / pattern state so enemy speed doesn't remain increased after death
+  battleElapsed = 0;
+  patternTimer = 0;
+  patternIndex = 0;
+  bullets = [];
+  lastTime = 0;
+
   const earned = Math.floor(battleGold);
   totalGold += earned;
   battleGold = 0;
@@ -355,7 +362,7 @@ function spawnPattern(index) {
   const by = enemy.y + enemy.h / 2;
 
   // time scaling: difficulty slightly ramps up as battle runs
-  const timeScale = 1 + (battleElapsed / 60000) * 0.6; // +60% per minute
+  const timeScale = 1 + (battleElapsed / 60000) * 0.6; // +60% per minute (affects enemy spawn/speed)
   const spawnMul = stages[currentStage].spawnMultiplier * timeScale;
   const speedMul = stages[currentStage].speedMultiplier * timeScale;
   const atkType = stages[currentStage].attackType;
@@ -437,11 +444,13 @@ function updateBullets() {
 }
 
 function updateGoldEarned(dt) {
-  const baseRate = 1.0;
+  // reduce base gold, but scale it up over time (separate from enemy timeScale)
+  const baseRate = 0.25; // smaller base
   const patternMultiplier = 1 + patternIndex * 0.5;
   const stageDifficulty = stages[currentStage].difficulty;
-  const timeScale = 1 + (battleElapsed / 60000) * 0.6;
-  const rate = baseRate * patternMultiplier * goldGainMultiplier * stageDifficulty * timeScale;
+  // gold grows faster as battle time passes (e.g. +80% per 30s)
+  const goldTimeScale = 1 + (battleElapsed / 30000) * 0.8;
+  const rate = baseRate * patternMultiplier * goldGainMultiplier * stageDifficulty * goldTimeScale;
   battleGold += rate * (dt / 1000);
 }
 
