@@ -1,146 +1,125 @@
-<!doctype html>
+
+<!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>RPG Battle Demo</title>
-  <link rel="stylesheet" href="rpg.css" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Ruu RPG - Game</title>
+
+  <link rel="stylesheet" href="rpg.css">
 </head>
+
 <body>
-  <header>
-    <div class="title-group">
-      <h1>RPG Battle Demo</h1>
-      <div class="subtitle">Undertale風・回避戦</div>
-    </div>
-    <div class="top-actions">
-      <button id="startBtn">Start Battle</button>
-      <div class="gold-wrap">
-        <span class="label">GOLD</span>
-        <strong id="gold">0</strong>
-      </div>
-      <div class="status-mini">
-        <span class="label">Stage</span>
-        <strong id="stageLabel">1</strong>
-      </div>
-      <div class="auth-wrap">
-        <span id="userNameDisplay" class="user-name"></span>
-        <button id="loginBtn" class="auth-btn">Login</button>
-        <button id="logoutBtn" class="auth-btn" style="display:none">Logout</button>
-      </div>
-      <a href="index.html" class="link-btn">Breakout</a>
-    </div>
-  </header>
+  <main id="rpg-game">
+    <!-- ゲーム画面 -->
+    <header id="game-header">
+      <h1>Ruu RPG</h1>
+      <p id="game-message" role="status" aria-live="polite">
+        冒険の準備をしよう！
+      </p>
+    </header>
 
-  <main class="game-shell">
-    <div class="status-panel">
-      <div class="status-item hp-status">
-        <span class="label">HP</span>
-        <div class="hp-wrap">
-          <div class="hp-bar" id="hpBar"><div class="hp-fill" id="hpFill"></div></div>
-          <strong id="hp">10</strong>
-        </div>
-      </div>
-      <div class="status-item">
-        <span class="label">Level</span>
-        <strong id="level">1</strong>
-      </div>
-      <div class="status-item">
-        <span class="label">Mode</span>
-        <strong id="mode">Ready</strong>
-      </div>
-    </div>
+    <!-- ステータス -->
+    <section id="status-panel" aria-label="プレイヤーのステータス">
+      <h2>PLAYER STATUS</h2>
 
-    <div class="canvas-wrap">
-      <canvas id="game" width="160" height="120"></canvas>
-    </div>
+      <p>レベル：<span id="player-level">1</span></p>
 
-    <p class="hint">矢印キー / WASD で移動。タッチやマウスでも操作できます。スペースで開始。Esc でメニュー。</p>
+      <p>
+        HP：
+        <span id="player-hp">100</span>
+        /
+        <span id="player-max-hp">100</span>
+      </p>
+
+      <progress
+        id="player-hp-bar"
+        value="100"
+        max="100"
+        aria-label="プレイヤーのHP"
+      ></progress>
+
+      <p>ゴールド：<span id="player-gold">0</span> G</p>
+
+      <p>経験値：<span id="player-exp">0</span></p>
+    </section>
+
+    <!-- 戦闘エリア -->
+    <section id="battle-panel" aria-label="戦闘">
+      <h2>BATTLE</h2>
+
+      <div id="enemy-area">
+        <div id="enemy-icon" aria-hidden="true">👾</div>
+
+        <h3 id="enemy-name">スライム</h3>
+
+        <p>
+          敵HP：
+          <span id="enemy-hp">30</span>
+          /
+          <span id="enemy-max-hp">30</span>
+        </p>
+
+        <progress
+          id="enemy-hp-bar"
+          value="30"
+          max="30"
+          aria-label="敵のHP"
+        ></progress>
+      </div>
+
+      <div id="battle-log" role="log" aria-live="polite">
+        <p>敵が現れた！</p>
+      </div>
+
+      <div id="battle-actions">
+        <button id="attack-button" type="button">
+          攻撃
+        </button>
+
+        <button id="heal-button" type="button">
+          回復
+        </button>
+
+        <button id="defend-button" type="button">
+          防御
+        </button>
+      </div>
+    </section>
+
+    <!-- ショップ -->
+    <section id="shop-panel" aria-label="ショップ">
+      <h2>SHOP</h2>
+
+      <p>
+        所持ゴールド：
+        <span id="shop-gold">0</span> G
+      </p>
+
+      <button id="buy-potion-button" type="button">
+        回復アイテムを購入（20 G）
+      </button>
+
+      <p>
+        回復アイテム：
+        <span id="potion-count">0</span> 個
+      </p>
+    </section>
+
+    <!-- ゲームオーバー -->
+    <section id="game-over-screen" hidden>
+      <h2>GAME OVER</h2>
+
+      <p>冒険はここで終わってしまった……</p>
+
+      <button id="restart-button" type="button">
+        もう一度挑戦する
+      </button>
+    </section>
   </main>
 
-  <!-- Shop modal -->
-  <div id="shopModal" class="modal" aria-hidden="true">
-    <div class="modal-content">
-      <div class="shop-header" style="display:flex;justify-content:space-between;align-items:center;">
-        <h2>Shop</h2>
-        <div style="display:flex;flex-direction:column;align-items:flex-end;">
-          <div>現在のGOLD: <strong id="shopGoldDisplay">0</strong></div>
-          <div id="invulnDisplay" style="font-size:12px;color:var(--muted);">無敵時間: 18/60 (3/10)</div>
-        </div>
-      </div>
-
-      <div style="display:flex;gap:20px;margin-top:12px;">
-        <div style="flex:1 1 60%;min-width:200px;">
-          <h3>Items</h3>
-          <div id="shopItems" class="shop-items">
-            <!-- items inserted by JS -->
-          </div>
-        </div>
-        <div style="flex:1 1 40%;min-width:180px;">
-          <h3>Stages</h3>
-          <div id="stageList" class="stage-list">
-            <!-- stages inserted by JS -->
-          </div>
-        </div>
-      </div>
-
-      <div class="shop-actions">
-        <button id="closeShop">Close</button>
-      </div>
-      <div id="shopEffects" class="shop-effects" aria-hidden="true"></div>
-    </div>
-  </div>
-
-  <!-- Death result modal -->
-  <div id="deathModal" class="modal" aria-hidden="true">
-    <div class="modal-content">
-      <h2>戦闘終了</h2>
-      <p>今回獲得したGOLD: <strong id="deathGold">0</strong></p>
-      <div class="modal-actions">
-        <button id="goShopBtn">Shopに移動</button>
-        <button id="replayBtn">再戦</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Login / Register modal -->
-  <div id="loginModal" class="modal" aria-hidden="true">
-    <div class="modal-content">
-      <h2>Login / Register</h2>
-      <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px;">
-        <input id="authUser" placeholder="Username" />
-        <input id="authPass" placeholder="Password" type="password" />
-        <div style="display:flex;gap:8px;justify-content:flex-end;">
-          <button id="authRegister">Register</button>
-          <button id="authLogin">Login</button>
-          <button id="authCancel">Cancel</button>
-        </div>
-      </div>
-      <div style="font-size:12px;color:var(--muted);margin-top:10px;">Note: This demo stores accounts locally in your browser (localStorage). It's not secure for real services.</div>
-    </div>
-  </div>
-
-  <!-- Admin panel modal -->
-  <div id="adminPanelModal" class="modal" aria-hidden="true">
-    <div class="modal-content">
-      <h2>Admin Panel</h2>
-      <div id="adminUserList" style="max-height:300px;overflow:auto;margin-bottom:12px"></div>
-      <div style="display:flex;gap:8px;justify-content:flex-end;">
-        <button id="adminCloseBtn">Close</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Menu modal (Esc) -->
-  <div id="menuModal" class="modal" aria-hidden="true">
-    <div class="modal-content">
-      <h2>Menu</h2>
-      <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px;">
-        <button id="giveUpBtn">戦闘を諦める</button>
-        <button id="closeMenuBtn">戦闘を継続する</button>
-      </div>
-    </div>
-  </div>
-
-  <script src="rpg.js"></script>
+  <!-- ゲームの処理 -->
+  <script src="rpg.js" defer></script>
 </body>
 </html>
