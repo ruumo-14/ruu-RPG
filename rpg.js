@@ -253,10 +253,12 @@
     hitFlash = Math.max(0, hitFlash - dt);
 
     // Every 30 seconds, enemy bullets become faster.
+    
     const tier = Math.floor(elapsed / 30);
 
+    // 30秒ごとに加速幅を大きくする
     bulletSpeedMultiplier =
-      1 + tier * 0.28 + tier * (tier - 1) * 0.055;
+      1 + tier * 0.5 + tier * (tier - 1) * 0.12;
 
     // Player movement.
     let dx = 0;
