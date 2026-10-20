@@ -6,9 +6,8 @@
   const ctx = canvas.getContext("2d", { alpha: false });
   const touchStart = document.getElementById("touch-start");
 
-  const COLORS = {
+  const C = {
     bg: "#07111b",
-    panel: "#0b1723",
     line: "#26384b",
     white: "#e8edf4",
     muted: "#9eafc1",
@@ -17,46 +16,68 @@
     orange: "#ffad55",
     gold: "#ffd166",
     blue: "#75c9ff",
-    green: "#78e0ae"
+    green: "#78e0ae",
+    panel: "#101f30"
   };
 
-  let W = 960, H = 540, dpr = 1, lastTime = 0;
+  let W = 960;
+  let H = 540;
+  let dpr = 1;
+  let lastTime = 0;
+
+  // title, shop, playing, pause, gameover
   let mode = "title";
-  let stage = 1, unlockedStage = 1;
-  let gold = 0, runGold = 0;
-  let elapsed = 0, stageTime = 0, goldTimer = 0;
+  let previousMode = "title";
+
+  let stage = 1;
+  let unlockedStages = new Set([1]);
+
+  let gold = 0;
+  let runGold = 0;
+  let elapsed = 0;
+  let goldTimer = 0;
   let hitFlash = 0;
   let bulletSpeedMultiplier = 1;
 
-  let bullets = [];
-  let edgeWarnings = [];
-  let particles = [];
-
-  let stage1ShotTimer = 0.5;
-  let radialTimer = 1.7;
-  let stage2EdgeTimer = 7.5;
-  let patternTick = 0;
+  let menuIndex = 0;
+  let shopMessage = "";
+  let messageTimer = 0;
 
   const keys = new Set();
   const touchDirs = new Set();
+
+  let bullets = [];
+  let particles = [];
+  let edgeWarnings = [];
+
+  let shotTimers = [];
+  let radialTimer = 1.5;
+  let edgeTimer = 6;
+  let patternTick = 0;
 
   const player = {
     x: 0,
     y: 0,
     r: 5,
     speed: 310,
-    invuln: 0,
-    lives: 3
+    lives: 3,
+    invuln: 0
   };
 
-  const enemy = {
-    x: 0,
-    y: 0,
-    r: 20
+  // Stage 1 has three enemies.
+  // Stage 2 currently has one central enemy.
+  let enemies = [];
+
+  const STAGE_COSTS = {
+    1: 0,
+    2: 50
   };
 
-  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-  const rand = (a, b) => a + Math.random() * (b - a);
+  const clamp = (v, min, max) =>
+    Math.max(min, Math.min(max, v));
+
+  const rand = (min, max) =>
+    min + Math.random() * (max - min);
 
   function resize() {
     const rect = canvas.getBoundingClientRect();
@@ -72,15 +93,27 @@
 
     if (!player.x) resetPositions();
 
+    positionEnemies();
     draw();
   }
 
   function resetPositions() {
     player.x = W / 2;
     player.y = H * 0.78;
+  }
 
-    enemy.x = W / 2;
-    enemy.y = H * 0.19;
+  function positionEnemies() {
+    if (stage === 1) {
+      enemies = [
+        { x: W * 0.5, y: H * 0.17, type: "front" },
+        { x: W * 0.2, y: H * 0.29, type: "left" },
+        { x: W * 0.8, y: H * 0.29, type: "right" }
+      ];
+    } else {
+      enemies = [
+        { x: W * 0.5, y: H * 0.19, type: "front" }
+      ];
+    }
   }
 
   window.addEventListener("resize", resize);
@@ -89,39 +122,55 @@
     setTimeout(resize, 100);
   });
 
-  function startRun(selectedStage = 1) {
+  function addGold(amount) {
+    gold += amount;
+    runGold += amount;
+  }
+
+  function startRun(selectedStage) {
+    if (!unlockedStages.has(selectedStage)) {
+      openShop();
+      shopMessage = "先にショップでステージを購入してね";
+      messageTimer = 3;
+      return;
+    }
+
     stage = selectedStage;
     mode = "playing";
 
-    runGold = 0;
     elapsed = 0;
-    stageTime = 0;
     goldTimer = 0;
+    runGold = 0;
     hitFlash = 0;
     bulletSpeedMultiplier = 1;
 
     bullets = [];
-    edgeWarnings = [];
     particles = [];
+    edgeWarnings = [];
 
-    stage1ShotTimer = 0.5;
-    radialTimer = 1.7;
-    stage2EdgeTimer = 7.5;
+    shotTimers = [];
+    radialTimer = 1.5;
+    edgeTimer = 6;
     patternTick = 0;
 
     player.lives = 3;
     player.invuln = 1.2;
 
     resetPositions();
+    positionEnemies();
+
+    // Different starting delays for each enemy.
+    shotTimers = enemies.map((_, i) => 0.6 + i * 0.45);
   }
 
-  function addGold(amount) {
-    gold += amount;
-    runGold += amount;
+  function openShop() {
+    mode = "shop";
+    menuIndex = 0;
+    shopMessage = "";
+    messageTimer = 0;
   }
 
-  // 時間が経つほど敵の弾が速くなる
-  function fire(x, y, angle, speed, radius = 4, color = COLORS.pink) {
+  function fire(x, y, angle, speed, color = C.pink, radius = 4) {
     const actualSpeed = speed * bulletSpeedMultiplier;
 
     bullets.push({
@@ -135,41 +184,16 @@
     });
   }
 
-  // プレイヤーを狙う弾
-  function aimedShot(
-    count = 1,
-    spread = 0,
-    speed = 190,
-    color = COLORS.pink
-  ) {
-    const base = Math.atan2(
+  function aimedShot(enemy, speed, color = C.pink) {
+    const angle = Math.atan2(
       player.y - enemy.y,
       player.x - enemy.x
     );
 
-    for (let i = 0; i < count; i++) {
-      const offset = count === 1
-        ? 0
-        : -spread / 2 + spread * i / (count - 1);
-
-      fire(
-        enemy.x,
-        enemy.y,
-        base + offset,
-        speed,
-        4,
-        color
-      );
-    }
+    fire(enemy.x, enemy.y, angle, speed, color);
   }
 
-  // 敵から全方向へ弾を発射
-  function radialShot(
-    count = 12,
-    speed = 125,
-    offset = 0,
-    color = COLORS.pink
-  ) {
+  function radialShot(enemy, count, speed, offset = 0) {
     for (let i = 0; i < count; i++) {
       const angle = offset + i * Math.PI * 2 / count;
 
@@ -178,73 +202,63 @@
         enemy.y,
         angle,
         speed,
-        4,
-        color
+        i % 3 === 0 ? C.orange : C.pink
       );
     }
   }
 
-  // Stage 2：画面端付近に攻撃予告を出す
+  // Stage 2: attack from a random point near a screen edge.
   function edgeBurst() {
     const side = Math.floor(Math.random() * 4);
 
-    let x, y, base;
+    let x, y, angle;
 
     if (side === 0) {
-      x = rand(20, W - 20);
-      y = 16;
-      base = Math.PI / 2;
+      x = rand(25, W - 25);
+      y = 18;
+      angle = Math.PI / 2;
     } else if (side === 1) {
-      x = W - 16;
-      y = rand(20, H - 20);
-      base = Math.PI;
+      x = W - 18;
+      y = rand(40, H - 25);
+      angle = Math.PI;
     } else if (side === 2) {
-      x = rand(20, W - 20);
-      y = H - 16;
-      base = -Math.PI / 2;
+      x = rand(25, W - 25);
+      y = H - 18;
+      angle = -Math.PI / 2;
     } else {
-      x = 16;
-      y = rand(20, H - 20);
-      base = 0;
+      x = 18;
+      y = rand(40, H - 25);
+      angle = 0;
     }
 
     edgeWarnings.push({
-      x,
-      y,
+      x, y, angle,
       life: 0.8,
-      side,
-      base,
       fired: false
     });
   }
 
   function update(dt) {
-    // タイトルやゲームオーバーでは戦闘処理を止める
-    if (mode !== "playing") return;
+    if (mode !== "playing") {
+      if (messageTimer > 0) {
+        messageTimer -= dt;
+      }
+      return;
+    }
 
     elapsed += dt;
-    stageTime += dt;
     patternTick += dt;
-
-    /*
-      30秒ごとに弾速アップ。
-      30秒：1.28倍
-      60秒：約1.61倍
-      90秒：約2倍
-      120秒：約2.5倍
-      以降も段階的に加速する。
-    */
-    const speedTier = Math.floor(elapsed / 30);
-
-    bulletSpeedMultiplier =
-      1 +
-      speedTier * 0.28 +
-      speedTier * (speedTier - 1) * 0.055;
 
     player.invuln = Math.max(0, player.invuln - dt);
     hitFlash = Math.max(0, hitFlash - dt);
 
-    // プレイヤー移動
+    // Every 30 seconds, enemy bullets become faster.
+    const tier = Math.floor(elapsed / 30);
+
+    bulletSpeedMultiplier =
+      1 + tier * 0.28 + tier * (tier - 1) * 0.055;
+
+    // Player movement.
     let dx = 0;
     let dy = 0;
 
@@ -272,7 +286,6 @@
       touchDirs.has("down")
     ) dy++;
 
-    // 斜め移動が速くなりすぎないようにする
     if (dx && dy) {
       dx *= Math.SQRT1_2;
       dy *= Math.SQRT1_2;
@@ -280,106 +293,105 @@
 
     player.x = clamp(
       player.x + dx * player.speed * dt,
-      15,
-      W - 15
+      12,
+      W - 12
     );
 
     player.y = clamp(
       player.y + dy * player.speed * dt,
-      45,
-      H - 20
+      42,
+      H - 18
     );
 
-    // =========================
-    // Stage 1：狙い撃ち＋全方位弾
-    // =========================
+    // Stage 1: three enemies attack from the front,
+    // front-left and front-right.
     if (stage === 1) {
-      stage1ShotTimer -= dt;
-      radialTimer -= dt;
+      for (let i = 0; i < enemies.length; i++) {
+        shotTimers[i] -= dt;
 
-      // プレイヤーを狙う直線弾
-      if (stage1ShotTimer <= 0) {
-        aimedShot(1, 0, 190, COLORS.pink);
+        if (shotTimers[i] <= 0) {
+          const enemy = enemies[i];
 
-        stage1ShotTimer = Math.max(
-          0.48,
-          1.08 - stageTime * 0.012
-        );
+          // Center enemy fires directly aimed bullets.
+          if (i === 0) {
+            aimedShot(enemy, 205, C.pink);
+            shotTimers[i] = Math.max(
+              0.42,
+              0.95 - elapsed * 0.003
+            );
+          }
+
+          // Side enemies fire aimed bullets too.
+          else {
+            aimedShot(enemy, 185, C.orange);
+            shotTimers[i] = Math.max(
+              0.55,
+              1.3 - elapsed * 0.003
+            );
+          }
+        }
       }
 
-      // ときどき全方位に弾を発射
+      // The center enemy periodically releases a radial burst.
+      radialTimer -= dt;
+
       if (radialTimer <= 0) {
         radialShot(
-          10,
-          125 + Math.min(35, stageTime),
-          patternTick * 0.22,
-          COLORS.orange
+          enemies[0],
+          12,
+          125 + Math.min(40, elapsed),
+          patternTick * 0.2
         );
 
-        radialTimer = 3.1;
+        radialTimer = 3;
       }
     }
 
-    // =========================
-    // Stage 2：放射状弾幕＋画面端攻撃
-    // =========================
-    else if (stage === 2) {
+    // Stage 2: radial volleys and occasional edge attacks.
+    if (stage === 2) {
       radialTimer -= dt;
 
       if (radialTimer <= 0) {
-        const count =
-          14 + Math.min(8, Math.floor(stageTime / 8));
-
-        const speed =
-          145 + Math.min(45, stageTime);
-
         radialShot(
-          count,
-          speed,
-          patternTick * 0.15,
-          COLORS.pink
+          enemies[0],
+          16 + Math.min(10, Math.floor(elapsed / 8)),
+          150 + Math.min(45, elapsed),
+          patternTick * 0.16
         );
 
-        radialTimer = 2.15;
+        radialTimer = 2.05;
       }
 
-      // 画面端付近からの攻撃
-      stage2EdgeTimer -= dt;
+      edgeTimer -= dt;
 
-      if (stage2EdgeTimer <= 0) {
+      if (edgeTimer <= 0) {
         edgeBurst();
-        stage2EdgeTimer = rand(7, 10);
+        edgeTimer = rand(5.5, 8.5);
       }
     }
 
-    // 画面端の攻撃予告と発射
+    // Edge attack warning, then a fan of bullets.
     for (const warning of edgeWarnings) {
       warning.life -= dt;
 
       if (warning.life <= 0 && !warning.fired) {
         warning.fired = true;
 
-        const count = 7;
-
-        for (let i = 0; i < count; i++) {
+        for (let i = -3; i <= 3; i++) {
           fire(
             warning.x,
             warning.y,
-            warning.base +
-              (i - (count - 1) / 2) * 0.16,
-            220,
-            4,
-            COLORS.orange
+            warning.angle + i * 0.15,
+            235,
+            C.orange
           );
         }
       }
     }
 
-    edgeWarnings = edgeWarnings.filter(
-      warning => warning.life > -0.7
-    );
+    edgeWarnings = edgeWarnings.filter(w => w.life > -0.8);
 
-    // 弾の移動と当たり判定
+    // Move bullets and check collisions.
     for (const bullet of bullets) {
       bullet.x += bullet.vx * dt;
       bullet.y += bullet.vy * dt;
@@ -391,10 +403,11 @@
           player.y - bullet.y
         ) < player.r + bullet.r
       ) {
+        bullet.dead = true;
+
         player.lives--;
         player.invuln = 1.25;
         hitFlash = 0.2;
-        bullet.dead = true;
 
         for (let i = 0; i < 8; i++) {
           particles.push({
@@ -403,82 +416,50 @@
             vx: rand(-65, 65),
             vy: rand(-65, 65),
             life: 0.35,
-            color: COLORS.pink
+            color: C.pink
           });
         }
 
         if (player.lives <= 0) {
           mode = "gameover";
+          menuIndex = 0;
+          bullets = [];
+          edgeWarnings = [];
+          break;
         }
       }
     }
 
-    bullets = bullets.filter(
-      bullet =>
-        !bullet.dead &&
-        bullet.x > -30 &&
-        bullet.x < W + 30 &&
-        bullet.y > -30 &&
-        bullet.y < H + 30
+    bullets = bullets.filter(b =>
+      !b.dead &&
+      b.x > -40 && b.x < W + 40 &&
+      b.y > -40 && b.y < H + 40
     );
 
-    // ダメージ演出の粒子
-    for (const particle of particles) {
-      particle.x += particle.vx * dt;
-      particle.y += particle.vy * dt;
-      particle.life -= dt;
+    for (const p of particles) {
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.life -= dt;
     }
 
-    particles = particles.filter(
-      particle => particle.life > 0
-    );
+    particles = particles.filter(p => p.life > 0);
 
-    /*
-      GOLD獲得：
-      10秒ごとに1 GOLDを基本とする。
-      30秒経過ごとに獲得量が2倍になる。
-
-      0〜29秒   ：1 GOLD
-      30〜59秒  ：2 GOLD
-      60〜89秒  ：4 GOLD
-      90〜119秒 ：8 GOLD
-      120〜149秒：16 GOLD
-    */
+    // Gain GOLD every 10 seconds.
+    // 30s = x2, 60s = x4, 90s = x8, etc.
     goldTimer += dt;
 
     while (goldTimer >= 10) {
       goldTimer -= 10;
 
       const goldTier = Math.floor(elapsed / 30);
-      const reward = 2 ** goldTier;
+      const reward = Math.pow(2, goldTier);
 
       addGold(reward);
     }
-
-    // 時間によるステージクリアは行わない。
-    // HPがなくなるまで生き残り続ける。
-  }
-
-  function pixelText(
-    text,
-    x,
-    y,
-    size,
-    color = COLORS.white,
-    align = "left"
-  ) {
-    ctx.save();
-    ctx.font = `bold ${size}px "Courier New", monospace`;
-    ctx.textAlign = align;
-    ctx.textBaseline = "middle";
-    ctx.fillStyle = color;
-    ctx.fillText(text, Math.round(x), Math.round(y));
-    ctx.restore();
   }
 
   function rect(x, y, w, h, color) {
     ctx.fillStyle = color;
-
     ctx.fillRect(
       Math.round(x),
       Math.round(y),
@@ -487,68 +468,63 @@
     );
   }
 
-  // シンプルなドット絵の敵
-  function drawEnemy() {
-    const x = enemy.x;
-    const y = enemy.y;
-
-    rect(x - 18, y - 14, 36, 28, COLORS.pink);
-    rect(x - 23, y - 7, 5, 14, COLORS.pink);
-    rect(x + 18, y - 7, 5, 14, COLORS.pink);
-
-    rect(x - 12, y - 19, 7, 5, COLORS.pink);
-    rect(x + 5, y - 19, 7, 5, COLORS.pink);
-
-    rect(x - 10, y - 2, 6, 5, COLORS.bg);
-    rect(x + 4, y - 2, 6, 5, COLORS.bg);
-    rect(x - 7, y + 7, 14, 3, COLORS.bg);
+  function text(
+    value,
+    x,
+    y,
+    size = 16,
+    color = C.white,
+    align = "left"
+  ) {
+    ctx.save();
+    ctx.font = `bold ${size}px "Courier New", monospace`;
+    ctx.textAlign = align;
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = color;
+    ctx.fillText(value, Math.round(x), Math.round(y));
+    ctx.restore();
   }
 
-  // 赤いドットのプレイヤー
+  function drawEnemy(enemy, index) {
+    const x = enemy.x;
+    const y = enemy.y;
+    const color = index === 0 ? C.pink : C.orange;
+
+    // Pixel-art enemy.
+    rect(x - 16, y - 13, 32, 26, color);
+    rect(x - 21, y - 6, 5, 12, color);
+    rect(x + 16, y - 6, 5, 12, color);
+    rect(x - 10, y - 18, 6, 5, color);
+    rect(x + 4, y - 18, 6, 5, color);
+    rect(x - 9, y - 2, 5, 5, C.bg);
+    rect(x + 4, y - 2, 5, 5, C.bg);
+    rect(x - 6, y + 7, 12, 3, C.bg);
+  }
+
   function drawPlayer() {
     if (
       player.invuln > 0 &&
       Math.floor(player.invuln * 12) % 2 === 0
-    ) {
-      return;
-    }
+    ) return;
 
-    rect(
-      player.x - 3,
-      player.y - 7,
-      6,
-      14,
-      COLORS.red
-    );
-
-    rect(
-      player.x - 7,
-      player.y - 3,
-      14,
-      6,
-      COLORS.red
-    );
-
-    rect(
-      player.x - 2,
-      player.y - 2,
-      4,
-      4,
-      "#ff9aa5"
-    );
+    rect(player.x - 3, player.y - 7, 6, 14, C.red);
+    rect(player.x - 7, player.y - 3, 14, 6, C.red);
+    rect(player.x - 2, player.y - 2, 4, 4, "#ff9aa5");
   }
 
-  function draw() {
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  function drawBullet(b) {
+    rect(b.x - b.r, b.y - b.r, b.r * 2, b.r * 2, b.color);
+    rect(b.x - 1, b.y - 1, 2, 2, "#fff0d0");
+  }
 
-    rect(0, 0, W, H, COLORS.bg);
+  function drawBackground() {
+    rect(0, 0, W, H, C.bg);
 
-    // 薄いドットグリッド
-    ctx.strokeStyle = COLORS.line;
+    ctx.strokeStyle = C.line;
     ctx.lineWidth = 1;
     ctx.strokeRect(1, 1, W - 2, H - 2);
 
-    ctx.globalAlpha = 0.14;
+    ctx.globalAlpha = 0.13;
 
     for (let x = 20; x < W; x += 32) {
       rect(x, 0, 1, H, "#1d3042");
@@ -559,369 +535,426 @@
     }
 
     ctx.globalAlpha = 1;
+  }
 
-    // タイトル画面
-    if (mode === "title") {
-      drawEnemy();
+  function drawButton(label, x, y, selected, width = 250) {
+    const h = 36;
 
-      pixelText(
-        "RUU RPG",
-        W / 2,
-        H * 0.36,
-        Math.max(22, Math.min(38, W * 0.045)),
-        COLORS.white,
-        "center"
-      );
+    rect(
+      x - width / 2,
+      y - h / 2,
+      width,
+      h,
+      selected ? "#1b3850" : C.panel
+    );
 
-      pixelText(
-        "DODGE  -  SURVIVE  -  COLLECT GOLD",
-        W / 2,
-        H * 0.45,
-        Math.max(10, Math.min(16, W * 0.018)),
-        COLORS.muted,
-        "center"
-      );
+    ctx.strokeStyle = selected ? C.blue : C.line;
+    ctx.lineWidth = selected ? 2 : 1;
 
-      if (Math.floor(performance.now() / 450) % 2 === 0) {
-        pixelText(
-          "PRESS SPACE / ENTER",
-          W / 2,
-          H * 0.65,
-          Math.max(14, Math.min(22, W * 0.024)),
-          COLORS.white,
-          "center"
-        );
+    ctx.strokeRect(
+      x - width / 2,
+      y - h / 2,
+      width,
+      h
+    );
+
+    text(
+      `${selected ? "> " : "  "}${label}`,
+      x,
+      y,
+      15,
+      selected ? C.gold : C.white,
+      "center"
+    );
+  }
+
+  function drawTitle() {
+    const enemyX = W / 2;
+    const enemyY = H * 0.19;
+
+    drawEnemy({ x: enemyX, y: enemyY }, 0);
+
+    text(
+      "RUU RPG",
+      W / 2,
+      H * 0.37,
+      Math.min(38, W * 0.045),
+      C.white,
+      "center"
+    );
+
+    text(
+      "DODGE  -  SURVIVE  -  COLLECT GOLD",
+      W / 2,
+      H * 0.46,
+      Math.min(16, W * 0.018),
+      C.muted,
+      "center"
+    );
+
+    drawButton("START / SHOP", W / 2, H * 0.64, true, 230);
+
+    text(
+      "ARROWS: MOVE / SELECT     SPACE: CONFIRM",
+      W / 2,
+      H * 0.76,
+      12,
+      C.muted,
+      "center"
+    );
+
+    text(`GOLD ${gold}`, W - 22, 25, 16, C.gold, "right");
+  }
+
+  function drawShop() {
+    text("SHOP", W / 2, H * 0.12, 28, C.gold, "center");
+    text(`YOUR GOLD: ${gold}`, W / 2, H * 0.2, 17, C.white, "center");
+
+    const items = [
+      {
+        label: "STAGE 1 - PLAY (FREE)",
+        action: "stage1"
+      },
+      {
+        label: unlockedStages.has(2)
+          ? "STAGE 2 - PLAY"
+          : `BUY STAGE 2 - ${STAGE_COSTS[2]} GOLD`,
+        action: "stage2"
+      },
+      {
+        label: "BACK TO TITLE",
+        action: "back"
       }
+    ];
 
-      pixelText(
-        "MOVE: ARROW KEYS / WASD",
+    const startY = H * 0.39;
+    const gap = 55;
+
+    items.forEach((item, i) => {
+      drawButton(
+        item.label,
         W / 2,
-        H * 0.75,
-        12,
-        COLORS.muted,
+        startY + i * gap,
+        menuIndex === i,
+        Math.min(W - 30, 350)
+      );
+    });
+
+    text(
+      "UP / DOWN: SELECT     SPACE: CONFIRM",
+      W / 2,
+      H * 0.78,
+      12,
+      C.muted,
+      "center"
+    );
+
+    if (messageTimer > 0 && shopMessage) {
+      text(
+        shopMessage,
+        W / 2,
+        H * 0.87,
+        13,
+        C.orange,
         "center"
       );
+    }
+  }
 
-      pixelText(
-        `GOLD ${gold}`,
-        W - 24,
-        28,
-        16,
-        COLORS.gold,
-        "right"
-      );
+  function drawPause() {
+    text("PAUSED", W / 2, H * 0.27, 30, C.white, "center");
 
+    drawButton(
+      "RESUME",
+      W / 2,
+      H * 0.44,
+      menuIndex === 0
+    );
+
+    drawButton(
+      "GIVE UP - GO TO SHOP",
+      W / 2,
+      H * 0.53,
+      menuIndex === 1,
+      290
+    );
+
+    text(
+      "UP / DOWN: SELECT     SPACE: CONFIRM",
+      W / 2,
+      H * 0.65,
+      12,
+      C.muted,
+      "center"
+    );
+  }
+
+  function drawGameOver() {
+    text("GAME OVER", W / 2, H * 0.27, 32, C.pink, "center");
+
+    text(
+      `SURVIVED ${elapsed.toFixed(1)}s`,
+      W / 2,
+      H * 0.36,
+      15,
+      C.white,
+      "center"
+    );
+
+    text(
+      `GOLD: ${gold}  (+${runGold})`,
+      W / 2,
+      H * 0.43,
+      15,
+      C.gold,
+      "center"
+    );
+
+    drawButton(
+      "RETRY",
+      W / 2,
+      H * 0.55,
+      menuIndex === 0
+    );
+
+    drawButton(
+      "GO TO SHOP",
+      W / 2,
+      H * 0.64,
+      menuIndex === 1
+    );
+
+    text(
+      "UP / DOWN: SELECT     SPACE: CONFIRM",
+      W / 2,
+      H * 0.76,
+      12,
+      C.muted,
+      "center"
+    );
+  }
+
+  function draw() {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    drawBackground();
+
+    if (mode === "title") {
+      drawTitle();
       return;
     }
 
-    // HUD
-    pixelText(`STAGE ${stage}`, 22, 26, 17, COLORS.white);
+    if (mode === "shop") {
+      drawShop();
+      return;
+    }
 
-    pixelText(
-      `GOLD ${gold}`,
-      W - 22,
-      26,
-      17,
-      COLORS.gold,
-      "right"
-    );
+    // The active battle is drawn behind the pause menu.
+    if (
+      mode === "playing" ||
+      mode === "pause" ||
+      mode === "gameover"
+    ) {
+      text(`STAGE ${stage}`, 18, 23, 15, C.white);
+      text(`GOLD ${gold}`, W - 18, 23, 15, C.gold, "right");
 
-    pixelText(
-      `HP ${"♥".repeat(Math.max(0, player.lives))}`,
-      22,
-      51,
-      15,
-      COLORS.pink
-    );
+      text(
+        `HP ${"♥".repeat(Math.max(0, player.lives))}`,
+        18,
+        46,
+        14,
+        C.pink
+      );
 
-    if (mode === "playing") {
-      drawEnemy();
+      text(
+        `TIME ${elapsed.toFixed(1)}s`,
+        W / 2,
+        24,
+        14,
+        C.white,
+        "center"
+      );
 
-      // 画面端の攻撃予告
+      text(
+        `BULLET x${bulletSpeedMultiplier.toFixed(2)}`,
+        W / 2,
+        44,
+        11,
+        C.orange,
+        "center"
+      );
+
+      enemies.forEach((enemy, i) => drawEnemy(enemy, i));
+
       for (const warning of edgeWarnings) {
         if (warning.life > 0) {
           ctx.globalAlpha =
-            Math.floor(performance.now() / 100) % 2
-              ? 0.8
-              : 0.3;
+            Math.floor(performance.now() / 100) % 2 ? 0.8 : 0.3;
 
           rect(
             warning.x - 7,
             warning.y - 7,
             14,
             14,
-            COLORS.orange
+            C.orange
           );
 
           ctx.globalAlpha = 1;
         }
       }
 
-      // 敵の弾
-      for (const bullet of bullets) {
-        rect(
-          bullet.x - bullet.r,
-          bullet.y - bullet.r,
-          bullet.r * 2,
-          bullet.r * 2,
-          bullet.color
-        );
+      bullets.forEach(drawBullet);
 
-        rect(
-          bullet.x - 1,
-          bullet.y - 1,
-          2,
-          2,
-          "#fff0d0"
-        );
-      }
-
-      // ダメージ演出
-      for (const particle of particles) {
-        rect(
-          particle.x,
-          particle.y,
-          3,
-          3,
-          particle.color
-        );
-      }
+      particles.forEach(p => {
+        rect(p.x, p.y, 3, 3, p.color);
+      });
 
       drawPlayer();
-
-      pixelText(
-        `TIME ${stageTime.toFixed(1)}s`,
-        W / 2,
-        28,
-        15,
-        COLORS.white,
-        "center"
-      );
-
-      pixelText(
-        `BULLET x${bulletSpeedMultiplier.toFixed(2)}`,
-        W / 2,
-        49,
-        11,
-        COLORS.orange,
-        "center"
-      );
     }
 
-    // ステージ選択
-    else if (mode === "stages") {
-      pixelText(
-        "STAGE SELECT",
-        W / 2,
-        H * 0.2,
-        25,
-        COLORS.white,
-        "center"
-      );
-
-      pixelText(
-        `YOUR GOLD: ${gold}`,
-        W / 2,
-        H * 0.29,
-        16,
-        COLORS.gold,
-        "center"
-      );
-
-      drawStageCard(1, W * 0.28, H * 0.43);
-      drawStageCard(2, W * 0.72, H * 0.43);
-
-      pixelText(
-        "PRESS 1 OR 2 TO ENTER",
-        W / 2,
-        H * 0.75,
-        15,
-        COLORS.muted,
-        "center"
-      );
-
-      pixelText(
-        "STAGE 2 UNLOCK: 50 GOLD",
-        W / 2,
-        H * 0.82,
-        12,
-        COLORS.muted,
-        "center"
-      );
-
-      pixelText(
-        "ESC: TITLE",
-        W / 2,
-        H * 0.9,
-        12,
-        COLORS.muted,
-        "center"
-      );
+    if (mode === "pause") {
+      ctx.globalAlpha = 0.78;
+      rect(0, 0, W, H, "#020812");
+      ctx.globalAlpha = 1;
+      drawPause();
     }
 
-    // ゲームオーバー
-    else if (mode === "gameover") {
-      pixelText(
-        "GAME OVER",
-        W / 2,
-        H * 0.35,
-        34,
-        COLORS.pink,
-        "center"
-      );
-
-      pixelText(
-        `SURVIVED ${stageTime.toFixed(1)}s`,
-        W / 2,
-        H * 0.45,
-        16,
-        COLORS.white,
-        "center"
-      );
-
-      pixelText(
-        `GOLD: ${gold}  (+${runGold})`,
-        W / 2,
-        H * 0.53,
-        16,
-        COLORS.gold,
-        "center"
-      );
-
-      pixelText(
-        "ENTER: RETRY    ESC: TITLE",
-        W / 2,
-        H * 0.68,
-        15,
-        COLORS.white,
-        "center"
-      );
+    if (mode === "gameover") {
+      ctx.globalAlpha = 0.84;
+      rect(0, 0, W, H, "#020812");
+      ctx.globalAlpha = 1;
+      drawGameOver();
     }
 
-    if (hitFlash > 0) {
+    if (hitFlash > 0 && mode === "playing") {
       ctx.globalAlpha = hitFlash * 1.5;
-      rect(0, 0, W, H, COLORS.red);
+      rect(0, 0, W, H, C.red);
       ctx.globalAlpha = 1;
     }
   }
 
-  function drawStageCard(n, x, y) {
-    const unlocked =
-      n <= unlockedStage ||
-      (n === 2 && gold >= 50);
+  // -------------------------
+  // Menu navigation
+  // -------------------------
 
-    const w = Math.min(220, W * 0.34);
-    const h = 100;
-
-    rect(
-      x - w / 2,
-      y,
-      w,
-      h,
-      unlocked ? "#112536" : "#111720"
-    );
-
-    ctx.strokeStyle = unlocked
-      ? COLORS.blue
-      : COLORS.line;
-
-    ctx.strokeRect(x - w / 2, y, w, h);
-
-    pixelText(
-      `STAGE ${n}`,
-      x,
-      y + 28,
-      17,
-      unlocked ? COLORS.white : COLORS.muted,
-      "center"
-    );
-
-    pixelText(
-      unlocked
-        ? (n === 1 ? "AIMED + RADIAL" : "RADIAL + EDGE")
-        : "LOCKED",
-      x,
-      y + 57,
-      11,
-      unlocked ? COLORS.gold : COLORS.muted,
-      "center"
-    );
-
-    if (unlocked) {
-      pixelText(
-        `[${n}]`,
-        x,
-        y + 80,
-        13,
-        COLORS.green,
-        "center"
-      );
-    }
+  function menuLength() {
+    if (mode === "shop") return 3;
+    if (mode === "pause") return 2;
+    if (mode === "gameover") return 2;
+    return 0;
   }
 
-  function frame(now) {
-    const dt = Math.min(
-      0.035,
-      (now - (lastTime || now)) / 1000
-    );
+  function moveMenu(direction) {
+    const length = menuLength();
+    if (!length) return;
 
-    lastTime = now;
-
-    update(dt);
-    draw();
-
-    requestAnimationFrame(frame);
+    menuIndex = (menuIndex + direction + length) % length;
   }
 
-  function keyDown(e) {
-    if (
-      [
-        "ArrowUp",
-        "ArrowDown",
-        "ArrowLeft",
-        "ArrowRight",
-        "Space"
-      ].includes(e.code)
-    ) {
-      e.preventDefault();
+  function confirmMenu() {
+    if (mode === "title") {
+      openShop();
+      return;
     }
 
-    keys.add(e.code);
-
-    if (
-      mode === "title" &&
-      ["Space", "Enter"].includes(e.code)
-    ) {
-      mode = "stages";
-    } else if (
-      mode === "gameover" &&
-      e.code === "Enter"
-    ) {
-      startRun(stage);
-    } else if (mode === "stages") {
-      if (e.code === "Escape") {
+    if (mode === "shop") {
+      if (menuIndex === 0) {
+        startRun(1);
+      } else if (menuIndex === 1) {
+        if (unlockedStages.has(2)) {
+          startRun(2);
+        } else if (gold >= STAGE_COSTS[2]) {
+          gold -= STAGE_COSTS[2];
+          unlockedStages.add(2);
+          shopMessage = "STAGE 2 UNLOCKED!";
+          messageTimer = 2;
+          startRun(2);
+        } else {
+          shopMessage = `GOLDが足りない！ あと${STAGE_COSTS[2] - gold} GOLD必要`;
+          messageTimer = 3;
+        }
+      } else if (menuIndex === 2) {
         mode = "title";
       }
 
-      if (
-        e.code === "Digit1" ||
-        e.code === "Numpad1"
-      ) {
-        startRun(1);
+      return;
+    }
+
+    if (mode === "pause") {
+      if (menuIndex === 0) {
+        mode = "playing";
+      } else {
+        // Giving up ends the run and opens the shop.
+        // Already collected GOLD is kept.
+        bullets = [];
+        edgeWarnings = [];
+        openShop();
       }
 
-      if (
-        (e.code === "Digit2" ||
-          e.code === "Numpad2") &&
-        (unlockedStage >= 2 || gold >= 50)
-      ) {
-        if (gold >= 50 && unlockedStage < 2) {
-          gold -= 50;
-        }
+      return;
+    }
 
-        unlockedStage = 2;
-        startRun(2);
+    if (mode === "gameover") {
+      if (menuIndex === 0) {
+        startRun(stage);
+      } else {
+        openShop();
       }
+    }
+  }
+
+  function handleEscape() {
+    if (mode === "playing") {
+      mode = "pause";
+      menuIndex = 0;
+    } else if (mode === "pause") {
+      mode = "playing";
+    } else if (mode === "shop") {
+      mode = "title";
+    } else if (mode === "gameover") {
+      openShop();
+    }
+  }
+
+  function keyDown(e) {
+    const handled = [
+      "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight",
+      "Space", "Escape", "Enter"
+    ];
+
+    if (handled.includes(e.code)) {
+      e.preventDefault();
+    }
+
+    // Ignore held-key repeat for menu actions.
+    if (e.repeat && mode !== "playing") return;
+
+    keys.add(e.code);
+
+    if (e.code === "Escape") {
+      handleEscape();
+      return;
+    }
+
+    if (mode === "playing") return;
+
+    if (
+      e.code === "ArrowUp" ||
+      e.code === "ArrowLeft"
+    ) {
+      moveMenu(-1);
+      return;
+    }
+
+    if (
+      e.code === "ArrowDown" ||
+      e.code === "ArrowRight"
+    ) {
+      moveMenu(1);
+      return;
+    }
+
+    if (e.code === "Space" || e.code === "Enter") {
+      confirmMenu();
     }
   }
 
@@ -929,15 +962,10 @@
     keys.delete(e.code);
   }
 
-  window.addEventListener(
-    "keydown",
-    keyDown,
-    { passive: false }
-  );
-
+  window.addEventListener("keydown", keyDown, { passive: false });
   window.addEventListener("keyup", keyUp);
 
-  // スマートフォン用の方向ボタン
+  // Touch direction controls from rpg.html.
   document.querySelectorAll("[data-dir]").forEach(button => {
     const dir = button.dataset.dir;
 
@@ -957,21 +985,47 @@
     button.addEventListener("lostpointercapture", up);
   });
 
-  touchStart.addEventListener("click", () => {
-    if (mode === "title") {
-      mode = "stages";
-    } else if (mode === "gameover") {
-      startRun(stage);
-    } else if (mode === "stages") {
-      startRun(stage <= unlockedStage ? stage : 1);
+  if (touchStart) {
+    touchStart.addEventListener("click", () => {
+      if (mode === "playing") return;
+
+      if (mode === "pause") {
+        mode = "playing";
+      } else if (mode === "gameover") {
+        openShop();
+      } else if (mode === "title") {
+        openShop();
+      } else if (mode === "shop") {
+        confirmMenu();
+      }
+    });
+  }
+
+  // Tap the battle area to pause or resume.
+  canvas.addEventListener("pointerdown", () => {
+    if (mode === "playing") {
+      mode = "pause";
+      menuIndex = 0;
+    } else if (mode === "pause") {
+      mode = "playing";
+    } else if (mode === "title") {
+      openShop();
     }
   });
 
-  canvas.addEventListener("pointerdown", () => {
-    if (mode === "title") {
-      mode = "stages";
-    }
-  });
+  function frame(now) {
+    const dt = Math.min(
+      0.035,
+      (now - (lastTime || now)) / 1000
+    );
+
+    lastTime = now;
+
+    update(dt);
+    draw();
+
+    requestAnimationFrame(frame);
+  }
 
   resize();
   requestAnimationFrame(frame);
