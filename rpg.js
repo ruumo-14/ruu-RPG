@@ -228,7 +228,7 @@
     radialTimers = [];
 
     // Stage 2は端から複数攻撃、Stage 5は終盤の追加バラージ。
-    edgeTimer = stage === 2 ? 1.2 : stage === 5 ? 2.0 : 9999;
+    edgeTimer = stage === 2 ? 0.35 : stage === 5 ? 2.0 : 9999;
     patternTick = 0;
 
     player.lives = 3;
@@ -361,7 +361,8 @@
       x,
       y,
       angle,
-      life: 0.8,
+      // 予告を短くして、端攻撃が次々と押し寄せるようにする。
+      life: 0.38,
       fired: false
     });
   }
@@ -557,9 +558,10 @@
 
       edgeTimer -= dt;
       if (edgeTimer <= 0) {
-        const burstCount = Math.random() < 0.45 ? 3 : 2;
+        // 4〜6方向から一斉に攻撃。間隔も短くして高密度の弾幕に。
+        const burstCount = Math.random() < 0.55 ? 6 : 4 + Math.floor(Math.random() * 2);
         for (let i = 0; i < burstCount; i++) edgeBurst();
-        edgeTimer = rand(1.35, 2.25);
+        edgeTimer = rand(0.42, 0.72);
       }
     }
 
@@ -642,13 +644,15 @@
       if (warning.life <= 0 && !warning.fired) {
         warning.fired = true;
 
-        for (let i = -3; i <= 3; i++) {
+        // 9発の扇状弾を速めに放ち、複数の端攻撃が重なるようにする。
+        for (let i = -4; i <= 4; i++) {
           fire(
             warning.x,
             warning.y,
-            warning.angle + i * 0.15,
-            235,
-            C.orange
+            warning.angle + i * 0.12,
+            270,
+            C.orange,
+            3.5
           );
         }
       }
