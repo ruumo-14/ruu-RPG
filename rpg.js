@@ -1,556 +1,355 @@
-
-"use strict";
-
-/* ========================================
-   Ruu RPG - Game Engine
-   ======================================== */
-
 (() => {
-  // ---------- HTML要素 ----------
+  "use strict";
 
-  const $ = (id) => document.getElementById(id);
+  const canvas = document.getElementById("game");
+  const ctx = canvas.getContext("2d", { alpha: false });
+  const touchControls = document.getElementById("touch-controls");
+  const touchStart = document.getElementById("touch-start");
 
-  const ui = {
-    message: $("game-message"),
-
-    level: $("player-level"),
-    hp: $("player-hp"),
-    maxHp: $("player-max-hp"),
-    hpBar: $("player-hp-bar"),
-    gold: $("player-gold"),
-    exp: $("player-exp"),
-
-    enemyIcon: $("enemy-icon"),
-    enemyName: $("enemy-name"),
-    enemyHp: $("enemy-hp"),
-    enemyMaxHp: $("enemy-max-hp"),
-    enemyHpBar: $("enemy-hp-bar"),
-
-    battleLog: $("battle-log"),
-
-    attack: $("attack-button"),
-    heal: $("heal-button"),
-    defend: $("defend-button"),
-
-    shopGold: $("shop-gold"),
-    buyPotion: $("buy-potion-button"),
-    potionCount: $("potion-count"),
-
-    gameOver: $("game-over-screen"),
-    restart: $("restart-button")
+  const COLORS = {
+    bg: "#07111b", panel: "#0b1723", line: "#26384b",
+    white: "#e8edf4", muted: "#9eafc1", pink: "#ff6575",
+    red: "#ff465e", orange: "#ffad55", gold: "#ffd166",
+    blue: "#75c9ff", green: "#78e0ae"
   };
 
-  // HTMLの不足によるエラーを早期に発見する
-  for (const [name, element] of Object.entries(ui)) {
-    if (!element) {
-      console.error(`Ruu RPG: HTML要素が見つかりません: ${name}`);
-      return;
+  let W = 960, H = 540, dpr = 1, lastTime = 0;
+  let mode = "title"; // title, playing, stageClear, gameover, stages
+  let stage = 1, unlockedStage = 1, gold = 0, runGold = 0;
+  let elapsed = 0, stageTime = 0, clearTimer = 0, hitFlash = 0;
+  let bullets = [], edgeWarnings = [], particles = [];
+  let stage2EdgeTimer = 7.5, stage1ShotTimer = 0.5, radialTimer = 1.8;
+  let patternTick = 0;
+  const keys = new Set();
+  const touchDirs = new Set();
+
+  const player = { x: 0, y: 0, r: 5, speed: 245, invuln: 0, lives: 3 };
+  const enemy = { x: 0, y: 0, r: 20 };
+
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const rand = (a, b) => a + Math.random() * (b - a);
+
+  function resize() {
+    const rect = canvas.getBoundingClientRect();
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    W = Math.max(320, rect.width);
+    H = Math.max(240, rect.height);
+    canvas.width = Math.floor(W * dpr);
+    canvas.height = Math.floor(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (!player.x) resetPositions();
+    draw();
+  }
+  function resetPositions() {
+    player.x = W / 2;
+    player.y = H * 0.78;
+    enemy.x = W / 2;
+    enemy.y = H * 0.19;
+  }
+  window.addEventListener("resize", resize);
+  window.addEventListener("orientationchange", () => setTimeout(resize, 100));
+
+  function startRun(selectedStage = 1) {
+    stage = selectedStage;
+    mode = "playing";
+    runGold = 0;
+    elapsed = 0;
+    stageTime = 0;
+    clearTimer = 0;
+    hitFlash = 0;
+    bullets = [];
+    edgeWarnings = [];
+    particles = [];
+    stage1ShotTimer = 0.5;
+    radialTimer = 1.7;
+    stage2EdgeTimer = 7.5;
+    patternTick = 0;
+    player.lives = 3;
+    player.invuln = 1.2;
+    resetPositions();
+  }
+  function addGold(amount) {
+    gold += amount;
+    runGold += amount;
+  }
+  function fire(x, y, angle, speed, radius = 4, color = COLORS.pink) {
+    bullets.push({ x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, r: radius, color });
+  }
+  function aimedShot(count = 1, spread = 0, speed = 145, color = COLORS.pink) {
+    const base = Math.atan2(player.y - enemy.y, player.x - enemy.x);
+    for (let i = 0; i < count; i++) {
+      const offset = count === 1 ? 0 : -spread / 2 + spread * i / (count - 1);
+      fire(enemy.x, enemy.y, base + offset, speed, 4, color);
     }
   }
-
-  // ---------- ゲーム設定 ----------
-
-  const CONFIG = {
-    startingHp: 100,
-    startingGold: 50,
-    startingPotions: 1,
-
-    potionPrice: 20,
-    potionHeal: 35,
-
-    basePlayerAttack: 12,
-    baseEnemyAttack: 8,
-
-    expPerLevel: 100,
-    levelHpBonus: 20,
-    levelAttackBonus: 3
-  };
-
-  const ENEMIES = [
-    {
-      name: "スライム",
-      icon: "🟢",
-      hp: 30,
-      attack: 6,
-      exp: 25,
-      gold: 15
-    },
-    {
-      name: "ゴブリン",
-      icon: "👺",
-      hp: 50,
-      attack: 10,
-      exp: 40,
-      gold: 25
-    },
-    {
-      name: "オオカミ",
-      icon: "🐺",
-      hp: 70,
-      attack: 13,
-      exp: 55,
-      gold: 35
-    },
-    {
-      name: "ドラゴン",
-      icon: "🐉",
-      hp: 120,
-      attack: 18,
-      exp: 100,
-      gold: 60
-    }
-  ];
-
-  // ---------- ゲーム状態 ----------
-
-  const state = {
-    started: false,
-    gameOver: false,
-    busy: false,
-    defending: false,
-
-    level: 1,
-    hp: CONFIG.startingHp,
-    maxHp: CONFIG.startingHp,
-    attack: CONFIG.basePlayerAttack,
-
-    exp: 0,
-    gold: CONFIG.startingGold,
-    potions: CONFIG.startingPotions,
-
-    enemy: null,
-    enemyIndex: 0,
-    battleGold: 0,
-
-    // 敵の攻撃タイマーを戦闘ごとに管理する
-    enemyAttackTimer: null,
-    battleId: 0
-  };
-
-  // ---------- 表示更新 ----------
-
-  function render() {
-    ui.level.textContent = state.level;
-    ui.hp.textContent = state.hp;
-    ui.maxHp.textContent = state.maxHp;
-    ui.hpBar.max = state.maxHp;
-    ui.hpBar.value = state.hp;
-
-    ui.gold.textContent = state.gold;
-    ui.shopGold.textContent = state.gold;
-    ui.exp.textContent = state.exp;
-    ui.potionCount.textContent = state.potions;
-
-    if (state.enemy) {
-      ui.enemyName.textContent = state.enemy.name;
-      ui.enemyIcon.textContent = state.enemy.icon;
-      ui.enemyHp.textContent = state.enemy.hp;
-      ui.enemyMaxHp.textContent = state.enemy.maxHp;
-
-      ui.enemyHpBar.max = state.enemy.maxHp;
-      ui.enemyHpBar.value = state.enemy.hp;
-    }
-
-    const disabled =
-      !state.started ||
-      state.gameOver ||
-      state.busy ||
-      !state.enemy;
-
-    ui.attack.disabled = disabled;
-    ui.heal.disabled = disabled || state.potions <= 0;
-    ui.defend.disabled = disabled;
-
-    ui.buyPotion.disabled =
-      !state.started ||
-      state.gameOver ||
-      state.gold < CONFIG.potionPrice;
-
-    ui.gameOver.hidden = !state.gameOver;
-  }
-
-  // ---------- 戦闘ログ ----------
-
-  function log(message) {
-    const p = document.createElement("p");
-    p.textContent = message;
-
-    ui.battleLog.appendChild(p);
-
-    // ログが増えすぎないようにする
-    while (ui.battleLog.children.length > 8) {
-      ui.battleLog.removeChild(ui.battleLog.firstElementChild);
-    }
-
-    ui.battleLog.scrollTop = ui.battleLog.scrollHeight;
-  }
-
-  function setMessage(message) {
-    ui.message.textContent = message;
-  }
-
-  // ---------- タイマー管理 ----------
-
-  function clearEnemyTimer() {
-    if (state.enemyAttackTimer !== null) {
-      clearTimeout(state.enemyAttackTimer);
-      state.enemyAttackTimer = null;
+  function radialShot(count = 12, speed = 105, offset = 0, color = COLORS.pink) {
+    for (let i = 0; i < count; i++) {
+      fire(enemy.x, enemy.y, offset + i * Math.PI * 2 / count, speed, 4, color);
     }
   }
-
-  function resetBattleTimer() {
-    clearEnemyTimer();
-    state.battleId += 1;
+  function edgeBurst() {
+    const side = Math.floor(Math.random() * 4);
+    const margin = 20;
+    let x, y, base;
+    if (side === 0) { x = rand(20, W - 20); y = 16; base = Math.PI / 2; }
+    else if (side === 1) { x = W - 16; y = rand(20, H - 20); base = Math.PI; }
+    else if (side === 2) { x = rand(20, W - 20); y = H - 16; base = -Math.PI / 2; }
+    else { x = 16; y = rand(20, H - 20); base = 0; }
+    edgeWarnings.push({ x, y, life: 0.8, side, base });
   }
 
-  // ---------- ゲーム開始 ----------
-
-  function startGame() {
-    if (state.started) return;
-
-    state.started = true;
-    setMessage("冒険が始まった！");
-    render();
-
-    startBattle(0);
-  }
-
-  // ---------- 戦闘開始 ----------
-
-  function startBattle(index) {
-    if (state.gameOver) return;
-
-    resetBattleTimer();
-
-    state.busy = false;
-    state.defending = false;
-    state.battleGold = 0;
-    state.enemyIndex = index % ENEMIES.length;
-
-    const template = ENEMIES[state.enemyIndex];
-
-    const scale = Math.floor(index / ENEMIES.length);
-
-    state.enemy = {
-      name: scale > 0
-        ? `${template.name} Lv.${scale + 1}`
-        : template.name,
-
-      icon: template.icon,
-      maxHp: template.hp + scale * 20,
-      hp: template.hp + scale * 20,
-      attack: template.attack + scale * 2,
-      exp: template.exp + scale * 10,
-      gold: template.gold + scale * 5
-    };
-
-    ui.battleLog.replaceChildren();
-
-    setMessage(`${state.enemy.name} が現れた！`);
-    log(`${state.enemy.name} との戦闘開始！`);
-
-    render();
-    scheduleEnemyAttack();
-  }
-
-  // ---------- 敵の攻撃 ----------
-
-  function scheduleEnemyAttack() {
-    clearEnemyTimer();
-
-    if (
-      !state.started ||
-      state.gameOver ||
-      !state.enemy ||
-      state.busy
-    ) {
-      return;
-    }
-
-    const currentBattleId = state.battleId;
-
-    // 1.5秒後に敵が攻撃する
-    state.enemyAttackTimer = setTimeout(() => {
-      state.enemyAttackTimer = null;
-
-      if (
-        currentBattleId !== state.battleId ||
-        state.gameOver ||
-        !state.enemy ||
-        state.busy
-      ) {
-        return;
+  function update(dt) {
+    if (mode !== "playing") {
+      if (mode === "stageClear") {
+        clearTimer -= dt;
+        if (clearTimer <= 0) mode = "stages";
       }
-
-      enemyAttack();
-    }, 1500);
-  }
-
-  function enemyAttack() {
-    if (state.gameOver || !state.enemy || state.busy) {
       return;
     }
+    elapsed += dt;
+    stageTime += dt;
+    patternTick += dt;
+    player.invuln = Math.max(0, player.invuln - dt);
+    hitFlash = Math.max(0, hitFlash - dt);
 
-    let damage = state.enemy.attack;
+    let dx = 0, dy = 0;
+    if (keys.has("ArrowLeft") || keys.has("KeyA") || touchDirs.has("left")) dx--;
+    if (keys.has("ArrowRight") || keys.has("KeyD") || touchDirs.has("right")) dx++;
+    if (keys.has("ArrowUp") || keys.has("KeyW") || touchDirs.has("up")) dy--;
+    if (keys.has("ArrowDown") || keys.has("KeyS") || touchDirs.has("down")) dy++;
+    if (dx && dy) { dx *= Math.SQRT1_2; dy *= Math.SQRT1_2; }
+    player.x = clamp(player.x + dx * player.speed * dt, 15, W - 15);
+    player.y = clamp(player.y + dy * player.speed * dt, 45, H - 20);
 
-    if (state.defending) {
-      damage = Math.max(1, Math.floor(damage / 2));
-      state.defending = false;
-      log("防御成功！ ダメージを半減した！");
-    }
-
-    state.hp = Math.max(0, state.hp - damage);
-
-    log(`${state.enemy.name} の攻撃！ ${damage} ダメージ！`);
-
-    if (state.hp <= 0) {
-      endGame();
-      return;
-    }
-
-    render();
-    scheduleEnemyAttack();
-  }
-
-  // ---------- プレイヤーの攻撃 ----------
-
-  function playerAttack() {
-    if (!canAct()) return;
-
-    state.defending = false;
-
-    const damage = state.attack + randomInt(0, 5);
-
-    state.enemy.hp = Math.max(0, state.enemy.hp - damage);
-
-    log(`あなたの攻撃！ ${damage} ダメージ！`);
-
-    if (state.enemy.hp <= 0) {
-      winBattle();
-      return;
-    }
-
-    render();
-  }
-
-  // ---------- 回復 ----------
-
-  function healPlayer() {
-    if (!canAct() || state.potions <= 0) return;
-
-    if (state.hp >= state.maxHp) {
-      log("HPはすでに満タンだ！");
-      return;
-    }
-
-    state.potions -= 1;
-
-    const before = state.hp;
-    state.hp = Math.min(
-      state.maxHp,
-      state.hp + CONFIG.potionHeal
-    );
-
-    log(`HPが ${state.hp - before} 回復した！`);
-
-    render();
-  }
-
-  // ---------- 防御 ----------
-
-  function defendPlayer() {
-    if (!canAct()) return;
-
-    state.defending = true;
-
-    log("防御の構えをとった！ 次の敵の攻撃を半減する！");
-    render();
-  }
-
-  function canAct() {
-    return (
-      state.started &&
-      !state.gameOver &&
-      !state.busy &&
-      Boolean(state.enemy)
-    );
-  }
-
-  // ---------- 戦闘勝利 ----------
-
-  function winBattle() {
-    if (!state.enemy || state.gameOver) return;
-
-    resetBattleTimer();
-
-    state.busy = true;
-    state.defending = false;
-
-    const defeatedEnemy = state.enemy;
-
-    // 戦闘報酬を今回の戦闘分として計算する
-    state.battleGold = defeatedEnemy.gold;
-
-    state.gold += state.battleGold;
-    state.exp += defeatedEnemy.exp;
-
-    log(`${defeatedEnemy.name} を倒した！`);
-    log(`${state.battleGold} G を獲得！`);
-    log(`${defeatedEnemy.exp} EXP を獲得！`);
-
-    levelUpIfNeeded();
-
-    state.enemy = null;
-
-    setMessage("勝利！ 次の敵が待っている……");
-    render();
-
-    const completedBattleId = state.battleId;
-
-    state.enemyAttackTimer = setTimeout(() => {
-      state.enemyAttackTimer = null;
-
-      if (
-        completedBattleId !== state.battleId ||
-        state.gameOver
-      ) {
-        return;
+    // The first two stages are survival encounters. Clear after surviving 25 seconds.
+    if (stage === 1) {
+      stage1ShotTimer -= dt;
+      radialTimer -= dt;
+      if (stage1ShotTimer <= 0) {
+        aimedShot(1, 0, 150, COLORS.pink);
+        stage1ShotTimer = Math.max(0.48, 1.08 - stageTime * 0.012);
       }
+      // A full-circle burst is mixed into the aimed shots.
+      if (radialTimer <= 0) {
+        radialShot(10, 92 + Math.min(30, stageTime), patternTick * 0.22, COLORS.orange);
+        radialTimer = 3.1;
+      }
+    } else if (stage === 2) {
+      radialTimer -= dt;
+      if (radialTimer <= 0) {
+        radialShot(14 + Math.min(8, Math.floor(stageTime / 8)), 105 + Math.min(38, stageTime), patternTick * 0.15);
+        radialTimer = 2.15;
+      }
+      // Occasional danger spawns near the edge, then releases a short fan.
+      stage2EdgeTimer -= dt;
+      if (stage2EdgeTimer <= 0) {
+        edgeBurst();
+        stage2EdgeTimer = rand(7, 10);
+      }
+    }
 
-      startBattle(state.enemyIndex + 1);
-    }, 1200);
-  }
+    for (const w of edgeWarnings) {
+      w.life -= dt;
+      if (w.life <= 0 && !w.fired) {
+        w.fired = true;
+        const count = 7;
+        for (let i = 0; i < count; i++) {
+          fire(w.x, w.y, w.base + (i - (count - 1) / 2) * 0.16, 175, 4, COLORS.orange);
+        }
+      }
+    }
+    edgeWarnings = edgeWarnings.filter(w => w.life > -0.7);
 
-  // ---------- レベルアップ ----------
+    for (const b of bullets) {
+      b.x += b.vx * dt;
+      b.y += b.vy * dt;
+      if (player.invuln <= 0 && Math.hypot(player.x - b.x, player.y - b.y) < player.r + b.r) {
+        player.lives--;
+        player.invuln = 1.25;
+        hitFlash = 0.2;
+        b.dead = true;
+        for (let i = 0; i < 8; i++) particles.push({ x: player.x, y: player.y, vx: rand(-65,65), vy: rand(-65,65), life: 0.35, color: COLORS.pink });
+        if (player.lives <= 0) {
+          mode = "gameover";
+          // Small consolation reward for surviving part of a run.
+          addGold(Math.floor(stageTime / 3));
+        }
+      }
+    }
+    bullets = bullets.filter(b => !b.dead && b.x > -30 && b.x < W + 30 && b.y > -30 && b.y < H + 30);
+    for (const p of particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt; }
+    particles = particles.filter(p => p.life > 0);
 
-  function levelUpIfNeeded() {
-    while (state.exp >= CONFIG.expPerLevel) {
-      state.exp -= CONFIG.expPerLevel;
-      state.level += 1;
+    // GOLD for survival, awarded once each second.
+    if (Math.floor(elapsed) > Math.floor(elapsed - dt)) addGold(1);
 
-      state.maxHp += CONFIG.levelHpBonus;
-      state.hp = state.maxHp;
-      state.attack += CONFIG.levelAttackBonus;
-
-      log(`レベルアップ！ Lv.${state.level} になった！`);
-      log("最大HP・攻撃力が上がり、HPが全回復！");
+    if (stageTime >= 25) {
+      mode = "stageClear";
+      clearTimer = 1.8;
+      unlockedStage = Math.max(unlockedStage, Math.min(2, stage + 1));
+      addGold(stage === 1 ? 30 : 50);
+      bullets = [];
+      edgeWarnings = [];
     }
   }
 
-  // ---------- ショップ ----------
+  function pixelText(text, x, y, size, color = COLORS.white, align = "left") {
+    ctx.save();
+    ctx.font = `bold ${size}px "Courier New", monospace`;
+    ctx.textAlign = align;
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = color;
+    ctx.fillText(text, Math.round(x), Math.round(y));
+    ctx.restore();
+  }
+  function rect(x, y, w, h, color) {
+    ctx.fillStyle = color;
+    ctx.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
+  }
+  function drawEnemy() {
+    // Simple abstract pixel creature; no specific enemy sprite is required.
+    const x = enemy.x, y = enemy.y;
+    rect(x - 18, y - 14, 36, 28, COLORS.pink);
+    rect(x - 23, y - 7, 5, 14, COLORS.pink);
+    rect(x + 18, y - 7, 5, 14, COLORS.pink);
+    rect(x - 12, y - 19, 7, 5, COLORS.pink);
+    rect(x + 5, y - 19, 7, 5, COLORS.pink);
+    rect(x - 10, y - 2, 6, 5, COLORS.bg);
+    rect(x + 4, y - 2, 6, 5, COLORS.bg);
+    rect(x - 7, y + 7, 14, 3, COLORS.bg);
+  }
+  function drawPlayer() {
+    if (player.invuln > 0 && Math.floor(player.invuln * 12) % 2 === 0) return;
+    // Tiny red pixel marker, matching the reference image.
+    rect(player.x - 3, player.y - 7, 6, 14, COLORS.red);
+    rect(player.x - 7, player.y - 3, 14, 6, COLORS.red);
+    rect(player.x - 2, player.y - 2, 4, 4, "#ff9aa5");
+  }
+  function draw() {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    rect(0, 0, W, H, COLORS.bg);
+    // Thin frame and subtle pixel grid.
+    ctx.strokeStyle = COLORS.line;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(1, 1, W - 2, H - 2);
+    ctx.globalAlpha = 0.14;
+    for (let x = 20; x < W; x += 32) rect(x, 0, 1, H, "#1d3042");
+    for (let y = 20; y < H; y += 32) rect(0, y, W, 1, "#1d3042");
+    ctx.globalAlpha = 1;
 
-  function buyPotion() {
-    if (
-      !state.started ||
-      state.gameOver ||
-      state.gold < CONFIG.potionPrice
-    ) {
+    if (mode === "title") {
+      drawEnemy();
+      pixelText("RUU RPG", W / 2, H * 0.36, Math.max(22, Math.min(38, W * 0.045)), COLORS.white, "center");
+      pixelText("DODGE  •  SURVIVE  •  COLLECT GOLD", W / 2, H * 0.45, Math.max(10, Math.min(16, W * 0.018)), COLORS.muted, "center");
+      const blink = Math.floor(performance.now() / 450) % 2 === 0;
+      if (blink) pixelText("PRESS SPACE / ENTER", W / 2, H * 0.65, Math.max(14, Math.min(22, W * 0.024)), COLORS.white, "center");
+      pixelText("MOVE: ARROW KEYS / WASD", W / 2, H * 0.75, 12, COLORS.muted, "center");
+      pixelText(`GOLD ${gold}`, W - 24, 28, 16, COLORS.gold, "right");
       return;
     }
 
-    state.gold -= CONFIG.potionPrice;
-    state.potions += 1;
-
-    log("回復アイテムを購入した！");
-    setMessage("ショップでアイテムを購入した。");
-
-    render();
-  }
-
-  // ---------- ゲームオーバー ----------
-
-  function endGame() {
-    resetBattleTimer();
-
-    state.gameOver = true;
-    state.busy = false;
-    state.defending = false;
-
-    setMessage("ゲームオーバー");
-    log("HPがなくなった…… 冒険は終了した。");
-
-    render();
-  }
-
-  // ---------- リスタート ----------
-
-  function restartGame() {
-    resetBattleTimer();
-
-    state.started = true;
-    state.gameOver = false;
-    state.busy = false;
-    state.defending = false;
-
-    state.level = 1;
-    state.hp = CONFIG.startingHp;
-    state.maxHp = CONFIG.startingHp;
-    state.attack = CONFIG.basePlayerAttack;
-
-    state.exp = 0;
-    state.gold = CONFIG.startingGold;
-    state.potions = CONFIG.startingPotions;
-
-    state.enemy = null;
-    state.enemyIndex = 0;
-    state.battleGold = 0;
-
-    startBattle(0);
-  }
-
-  // ---------- 共通処理 ----------
-
-  function randomInt(min, max) {
-    return Math.floor(Math.random() * (max - min + 1)) + min;
-  }
-
-  // ---------- イベント登録 ----------
-
-  ui.attack.addEventListener("click", playerAttack);
-  ui.heal.addEventListener("click", healPlayer);
-  ui.defend.addEventListener("click", defendPlayer);
-  ui.buyPotion.addEventListener("click", buyPotion);
-  ui.restart.addEventListener("click", restartGame);
-
-  // index.html のタイトル画面から開始する
-  // rpg.html を直接開いた場合も Space キーで開始できる
-  document.addEventListener("keydown", (event) => {
-    if (event.code !== "Space") return;
-
-    const target = event.target;
-
-    if (
-      target instanceof HTMLElement &&
-      (
-        target.isContentEditable ||
-        ["BUTTON", "INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)
-      )
-    ) {
-      return;
+    // HUD
+    pixelText(`STAGE ${stage}`, 22, 26, 17, COLORS.white);
+    pixelText(`GOLD ${gold}`, W - 22, 26, 17, COLORS.gold, "right");
+    pixelText(`HP ${"♥".repeat(Math.max(0, player.lives))}`, 22, 51, 15, COLORS.pink);
+    if (mode === "playing" || mode === "stageClear") {
+      drawEnemy();
+      for (const w of edgeWarnings) {
+        if (w.life > 0) {
+          ctx.globalAlpha = (Math.floor(performance.now() / 100) % 2) ? 0.8 : 0.3;
+          rect(w.x - 7, w.y - 7, 14, 14, COLORS.orange);
+          ctx.globalAlpha = 1;
+        }
+      }
+      for (const b of bullets) {
+        rect(b.x - b.r, b.y - b.r, b.r * 2, b.r * 2, b.color);
+        rect(b.x - 1, b.y - 1, 2, 2, "#fff0d0");
+      }
+      for (const p of particles) rect(p.x, p.y, 3, 3, p.color);
+      drawPlayer();
+      pixelText(`SURVIVE ${Math.max(0, 25 - stageTime).toFixed(1)}s`, W / 2, 28, 15, COLORS.white, "center");
+      if (mode === "stageClear") {
+        rect(W * 0.2, H * 0.39, W * 0.6, H * 0.2, "#07111bee");
+        pixelText(`STAGE ${stage} CLEAR!`, W / 2, H * 0.45, 25, COLORS.gold, "center");
+        pixelText("+ GOLD", W / 2, H * 0.52, 16, COLORS.white, "center");
+      }
+    } else if (mode === "stages") {
+      pixelText("STAGE SELECT", W / 2, H * 0.2, 25, COLORS.white, "center");
+      pixelText(`YOUR GOLD: ${gold}`, W / 2, H * 0.29, 16, COLORS.gold, "center");
+      drawStageCard(1, W * 0.28, H * 0.43, stage === 1);
+      drawStageCard(2, W * 0.72, H * 0.43, stage === 2);
+      pixelText("PRESS 1 OR 2 TO ENTER", W / 2, H * 0.75, 15, COLORS.muted, "center");
+      pixelText("STAGE 2 UNLOCK: 50 GOLD", W / 2, H * 0.82, 12, COLORS.muted, "center");
+      pixelText("ESC: TITLE", W / 2, H * 0.9, 12, COLORS.muted, "center");
+    } else if (mode === "gameover") {
+      pixelText("GAME OVER", W / 2, H * 0.35, 34, COLORS.pink, "center");
+      pixelText(`SURVIVED ${stageTime.toFixed(1)}s`, W / 2, H * 0.45, 16, COLORS.white, "center");
+      pixelText(`GOLD: ${gold}  (+${runGold})`, W / 2, H * 0.53, 16, COLORS.gold, "center");
+      pixelText("ENTER: RETRY    ESC: TITLE", W / 2, H * 0.68, 15, COLORS.white, "center");
     }
-
-    event.preventDefault();
-
-    if (!state.started && !state.gameOver) {
-      startGame();
+    if (hitFlash > 0) {
+      ctx.globalAlpha = hitFlash * 1.5;
+      rect(0, 0, W, H, COLORS.red);
+      ctx.globalAlpha = 1;
     }
+  }
+  function drawStageCard(n, x, y) {
+    const unlocked = n <= unlockedStage || (n === 2 && gold >= 50);
+    const w = Math.min(220, W * 0.34), h = 100;
+    rect(x - w / 2, y, w, h, unlocked ? "#112536" : "#111720");
+    ctx.strokeStyle = unlocked ? COLORS.blue : COLORS.line;
+    ctx.strokeRect(x - w / 2, y, w, h);
+    pixelText(`STAGE ${n}`, x, y + 28, 17, unlocked ? COLORS.white : COLORS.muted, "center");
+    pixelText(unlocked ? (n === 1 ? "AIMED + RADIAL" : "RADIAL + EDGE") : "LOCKED", x, y + 57, 11, unlocked ? COLORS.gold : COLORS.muted, "center");
+    if (unlocked) pixelText(`[${n}]`, x, y + 80, 13, COLORS.green, "center");
+  }
+
+  function frame(now) {
+    const dt = Math.min(0.035, (now - (lastTime || now)) / 1000);
+    lastTime = now;
+    update(dt);
+    draw();
+    requestAnimationFrame(frame);
+  }
+
+  function keyDown(e) {
+    if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Space"].includes(e.code)) e.preventDefault();
+    keys.add(e.code);
+    if (mode === "title" && ["Space","Enter"].includes(e.code)) mode = "stages";
+    else if (mode === "gameover" && e.code === "Enter") startRun(stage);
+    else if (mode === "stages") {
+      if (e.code === "Escape") mode = "title";
+      if (e.code === "Digit1" || e.code === "Numpad1") startRun(1);
+      if ((e.code === "Digit2" || e.code === "Numpad2") && (unlockedStage >= 2 || gold >= 50)) {
+        if (gold >= 50 && unlockedStage < 2) gold -= 50;
+        unlockedStage = 2;
+        startRun(2);
+      }
+    } else if (mode === "stageClear" && e.code === "Enter") mode = "stages";
+  }
+  function keyUp(e) { keys.delete(e.code); }
+  window.addEventListener("keydown", keyDown, { passive: false });
+  window.addEventListener("keyup", keyUp);
+
+  document.querySelectorAll("[data-dir]").forEach(button => {
+    const dir = button.dataset.dir;
+    const down = e => { e.preventDefault(); touchDirs.add(dir); };
+    const up = e => { e.preventDefault(); touchDirs.delete(dir); };
+    button.addEventListener("pointerdown", down);
+    button.addEventListener("pointerup", up);
+    button.addEventListener("pointercancel", up);
+    button.addEventListener("lostpointercapture", up);
+  });
+  touchStart.addEventListener("click", () => {
+    if (mode === "title") mode = "stages";
+    else if (mode === "gameover") startRun(stage);
+    else if (mode === "stages") startRun(stage <= unlockedStage ? stage : 1);
+  });
+  canvas.addEventListener("pointerdown", () => {
+    if (mode === "title") mode = "stages";
+    else if (mode === "stageClear") mode = "stages";
   });
 
-  // ---------- 初期化 ----------
-
-  state.started = false;
-  state.enemy = {
-    name: ENEMIES[0].name,
-    icon: ENEMIES[0].icon,
-    hp: ENEMIES[0].hp,
-    maxHp: ENEMIES[0].hp,
-    attack: ENEMIES[0].attack,
-    exp: ENEMIES[0].exp,
-    gold: ENEMIES[0].gold
-  };
-
-  setMessage("Spaceキーを押して冒険を始めよう！");
-  log("準備ができたら Space キーを押そう！");
-
-  render();
+  resize();
+  requestAnimationFrame(frame);
 })();
