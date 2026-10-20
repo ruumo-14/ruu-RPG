@@ -1,205 +1,429 @@
-/* rpg.css updates for stage/shop visuals */
-:root{
-  --bg:#08121a;
-  --panel:#0f1724;
-  --panel2:#111b2c;
-  --line:rgba(255,255,255,0.08);
-  --text:#edf3ff;
-  --muted:#a1b1c9;
-  --accent:#7ef3c6;
-  --danger:#ff6b6b;
-  --warn:#ffd166;
+
+/* ========================================
+   Ruu RPG - Main Stylesheet
+   ======================================== */
+
+/* ---------- 基本設定 ---------- */
+
+:root {
+  color-scheme: dark;
+
+  --bg: #10131f;
+  --panel: #1b2033;
+  --panel-light: #252c43;
+  --border: #394463;
+
+  --text: #f4f6ff;
+  --text-muted: #aab3ce;
+
+  --primary: #7667ff;
+  --primary-hover: #958aff;
+
+  --green: #48d597;
+  --red: #ff6378;
+  --gold: #ffd166;
+  --blue: #58b9ff;
+
+  --radius: 14px;
+  --shadow: 0 8px 24px rgb(0 0 0 / 25%);
 }
-*{box-sizing:border-box}
-html,body{height:100%}
-body{
-  margin:0;
-  background:linear-gradient(180deg,#050b14,#0a1628);
-  color:var(--text);
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  justify-content:flex-start;
-  padding:20px;
+
+* {
+  box-sizing: border-box;
 }
-header{
-  width:min(900px, 100%);
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:12px;
-  padding:14px 18px;
-  background:rgba(255,255,255,0.02);
-  border:1px solid var(--line);
-  border-radius:12px;
+
+html {
+  min-height: 100%;
+  background: var(--bg);
 }
-.title-group h1{
-  margin:0;
-  font-size:clamp(1.2rem, 2vw, 2rem);
-}
-.subtitle{
-  color:var(--muted);
-  font-size:0.8rem;
-  margin-top:4px;
-}
-.top-actions{
-  display:flex;
-  gap:10px;
-  align-items:center;
-}
-.status-mini{display:flex;align-items:center;gap:6px}
-button, .link-btn{
-  border:1px solid var(--line);
-  background:var(--panel2);
-  color:var(--text);
-  padding:10px 14px;
-  border-radius:8px;
-  font-size:0.9rem;
-  text-decoration:none;
-  cursor:pointer;
-}
-button:hover, .link-btn:hover{
-  border-color:rgba(126,243,198,.5);
-}
-.game-shell{
-  width:min(900px, 100%);
-  margin-top:18px;
-  background:rgba(255,255,255,0.02);
-  border:1px solid var(--line);
-  border-radius:14px;
-  padding:18px;
-}
-.status-panel{
-  display:flex;
-  gap:12px;
-  margin-bottom:16px;
-}
-.status-item{
-  min-width:120px;
-  border:1px solid var(--line);
-  border-radius:10px;
-  padding:10px 12px;
-  background:rgba(255,255,255,0.02);
-}
-.label{
-  display:block;
-  font-size:0.7rem;
-  color:var(--muted);
-  margin-bottom:6px;
-}
-.canvas-wrap{
-  width:100%;
-  display:flex;
-  justify-content:center;
-  background:#040b14;
-  border:1px solid var(--line);
-  border-radius:12px;
-  overflow:hidden;
-}
-canvas{
-  display:block;
-  width:min(100%, 640px);
-  height:auto;
-  image-rendering:pixelated;
-  background:#06111c;
-}
-.hint{
-  color:var(--muted);
-  text-align:center;
-  margin:12px 0 0;
-  font-size:0.8rem;
-}
-.modal {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.6);
-  display: none;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
-  z-index: 50;
-}
-.modal.show {
-  display: flex;
-}
-.modal-content {
-  width: min(420px, 100%);
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 20px;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.35);
-  position: relative;
-}
-.modal-content h2 {
+
+body {
   margin: 0;
+  min-height: 100vh;
+  padding: 24px;
+
+  color: var(--text);
+  background:
+    radial-gradient(
+      ellipse at top,
+      #25264a 0%,
+      var(--bg) 55%
+    );
+
+  font-family:
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+
+  line-height: 1.6;
+}
+
+button {
+  font: inherit;
+}
+
+button:focus-visible {
+  outline: 3px solid var(--gold);
+  outline-offset: 4px;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ---------- ゲーム全体 ---------- */
+
+#rpg-game {
+  width: 100%;
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+#game-header {
+  margin-bottom: 24px;
+  padding: 24px;
+  text-align: center;
+
+  background: linear-gradient(
+    135deg,
+    #302e65,
+    #1b2033
+  );
+
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+#game-header h1 {
+  margin: 0;
+  color: var(--gold);
+
+  font-size: clamp(2rem, 5vw, 3rem);
+  font-weight: 900;
+  letter-spacing: 0.08em;
+
+  text-shadow: 0 0 24px rgb(255 209 102 / 20%);
+}
+
+#game-message {
+  margin: 8px 0 0;
+  color: var(--text-muted);
+}
+
+/* ---------- 共通パネル ---------- */
+
+#status-panel,
+#battle-panel,
+#shop-panel,
+#game-over-screen {
+  margin-bottom: 20px;
+  padding: 24px;
+
+  background: rgb(27 32 51 / 95%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+section h2 {
+  margin-top: 0;
+  margin-bottom: 18px;
+
+  font-size: 1.15rem;
+  letter-spacing: 0.08em;
+}
+
+#status-panel h2,
+#shop-panel h2 {
+  color: var(--blue);
+}
+
+#battle-panel h2 {
+  color: var(--red);
+}
+
+#status-panel p {
+  margin: 10px 0;
+  color: var(--text-muted);
+}
+
+#status-panel span,
+#shop-panel span {
+  color: var(--text);
+  font-weight: 700;
+}
+
+/* ---------- HPバー ---------- */
+
+progress {
+  display: block;
+  width: 100%;
+  height: 16px;
+
+  overflow: hidden;
+  appearance: none;
+  -webkit-appearance: none;
+
+  background: #090c16;
+  border: 1px solid #424a64;
+  border-radius: 999px;
+}
+
+progress::-webkit-progress-bar {
+  background: #090c16;
+  border-radius: 999px;
+}
+
+progress::-webkit-progress-value {
+  background: var(--green);
+  border-radius: 999px;
+  transition: width 0.25s ease;
+}
+
+progress::-moz-progress-bar {
+  background: var(--green);
+  border-radius: 999px;
+}
+
+#enemy-hp-bar::-webkit-progress-value {
+  background: var(--red);
+}
+
+#enemy-hp-bar::-moz-progress-bar {
+  background: var(--red);
+}
+
+#player-hp-bar,
+#enemy-hp-bar {
+  margin: 12px 0 20px;
+}
+
+/* ---------- 戦闘エリア ---------- */
+
+#battle-panel {
+  text-align: center;
+}
+
+#enemy-area {
+  max-width: 440px;
+  margin: 0 auto 24px;
+  padding: 24px;
+
+  background:
+    radial-gradient(
+      ellipse at center,
+      #303454,
+      #191d30
+    );
+
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+#enemy-icon {
+  margin: 8px 0;
+  font-size: clamp(4rem, 12vw, 6rem);
+
+  filter: drop-shadow(
+    0 8px 12px rgb(0 0 0 / 30%)
+  );
+
+  animation: enemy-float 2.5s ease-in-out infinite;
+}
+
+#enemy-name {
+  margin: 8px 0;
   font-size: 1.4rem;
 }
-.modal-actions,
-.shop-actions {
+
+#enemy-area p {
+  color: var(--text-muted);
+}
+
+#battle-log {
+  min-height: 90px;
+  margin: 20px 0;
+  padding: 16px;
+
+  text-align: left;
+  color: var(--text-muted);
+
+  background: #111522;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+#battle-log p {
+  margin: 4px 0;
+}
+
+/* ---------- ボタン ---------- */
+
+#battle-actions {
   display: flex;
-  gap: 10px;
-  justify-content: flex-end;
-  margin-top: 16px;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
 }
-.gold-wrap {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: rgba(255,255,255,0.02);
+
+#battle-actions button,
+#buy-potion-button,
+#restart-button {
+  min-height: 46px;
+  padding: 11px 22px;
+
+  color: white;
+  background: var(--primary);
+  border: 1px solid transparent;
+  border-radius: 10px;
+
+  font-weight: 700;
+  cursor: pointer;
+
+  transition:
+    background 0.2s ease,
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
 }
-.gold-wrap .label {
-  margin-bottom: 0;
+
+#battle-actions button:hover:not(:disabled),
+#buy-potion-button:hover:not(:disabled),
+#restart-button:hover:not(:disabled) {
+  background: var(--primary-hover);
+  transform: translateY(-2px);
+  box-shadow: 0 5px 15px rgb(118 103 255 / 20%);
 }
-.modal-content.full {
-  width: 100%;
-  height: 100%;
-  border-radius: 0;
-  display: flex;
-  flex-direction: column;
+
+#attack-button {
+  background: #b83d55;
 }
-.shop-items {
-  margin-top: 16px;
-  overflow: auto;
-  flex: 1 1 auto;
+
+#attack-button:hover:not(:disabled) {
+  background: #df4d68;
 }
-.shop-effects {
-  position: absolute;
-  left: 16px;
-  right: 16px;
-  bottom: 16px;
-  pointer-events: none;
+
+#heal-button {
+  background: #21885f;
 }
-.purchase-effect {
-  display: inline-block;
-  background: rgba(126,243,198,0.12);
-  color: var(--accent);
-  border: 1px solid rgba(126,243,198,0.25);
-  padding: 8px 12px;
-  border-radius: 8px;
-  margin-top: 6px;
-  transform: translateY(0);
-  opacity: 1;
-  transition: transform 0.6s ease, opacity 0.6s ease;
+
+#heal-button:hover:not(:disabled) {
+  background: #2ca876;
 }
-.purchase-effect.fade {
-  transform: translateY(-30px);
-  opacity: 0;
+
+#defend-button {
+  background: #286da5;
 }
-.stage-list { margin-top:8px }
-.stage-row { border-bottom:1px solid rgba(255,255,255,0.03); padding:6px 0 }
-.stage-row button[disabled] { opacity: 0.5 }
-@media (max-width:640px){
-  header{
-    flex-direction:column;
-    align-items:flex-start;
+
+#defend-button:hover:not(:disabled) {
+  background: #3589c9;
+}
+
+/* ---------- ショップ ---------- */
+
+#shop-panel p {
+  color: var(--text-muted);
+}
+
+#shop-gold {
+  color: var(--gold) !important;
+}
+
+#buy-potion-button {
+  margin: 8px 0;
+  background: #8056c9;
+}
+
+#potion-count {
+  color: var(--green) !important;
+}
+
+/* ---------- ゲームオーバー ---------- */
+
+#game-over-screen {
+  text-align: center;
+  border-color: #78384c;
+  background: linear-gradient(
+    135deg,
+    #381e30,
+    #1b2033
+  );
+}
+
+#game-over-screen h2 {
+  color: var(--red);
+  font-size: 2rem;
+}
+
+#game-over-screen p {
+  color: var(--text-muted);
+}
+
+#restart-button {
+  margin-top: 12px;
+}
+
+/* ---------- hidden属性を確実に反映 ---------- */
+
+[hidden] {
+  display: none !important;
+}
+
+/* ---------- アニメーション ---------- */
+
+@keyframes enemy-float {
+  0%,
+  100% {
+    transform: translateY(0);
   }
-  .top-actions{
-    width:100%;
-    justify-content:space-between;
+
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+/* ---------- スマートフォン ---------- */
+
+@media (max-width: 600px) {
+  body {
+    padding: 12px;
+  }
+
+  #game-header,
+  #status-panel,
+  #battle-panel,
+  #shop-panel,
+  #game-over-screen {
+    padding: 16px;
+  }
+
+  #battle-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  #battle-actions button,
+  #buy-potion-button,
+  #restart-button {
+    width: 100%;
+  }
+
+  #enemy-area {
+    padding: 16px;
+  }
+}
+
+/* ---------- 動きを減らす設定 ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
