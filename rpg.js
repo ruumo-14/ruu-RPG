@@ -35,6 +35,11 @@
   let goldTimer = 0;
   let hitFlash = 0;
   let bulletSpeedMultiplier = 1;
+  // ショップで購入した永続アップグレード
+  let healInterval = 0; // 0=未購入、60 / 45 / 30秒
+  let healTimer = 0;
+  let bonusMaxLives = 0;
+  let bulletSlowUpgrade = false;
 
   let menuIndex = 0;
   let shopMessage = "";
@@ -65,6 +70,7 @@
     r: 5,
     speed: 310,
     lives: 3,
+    maxLives: 3,
     invuln: 0
   };
 
@@ -219,6 +225,8 @@
     runGold = 0;
     hitFlash = 0;
     bulletSpeedMultiplier = 1;
+    healTimer = 0;
+    player.maxLives = 3 + bonusMaxLives;
 
     bullets = [];
     particles = [];
@@ -231,7 +239,7 @@
     edgeTimer = stage === 2 ? 0.35 : stage === 5 ? 2.0 : 9999;
     patternTick = 0;
 
-    player.lives = 3;
+    player.lives = player.maxLives;
     player.invuln = 1.2;
 
     resetPlayer();
@@ -401,9 +409,21 @@
     const tier = Math.floor(elapsed / 30);
 
     bulletSpeedMultiplier =
-      1 +
-      0.65 * tier +
-      0.15 * tier * (tier - 1) / 2;
+      (1 + 0.65 * tier + 0.15 * tier * (tier - 1) / 2) *
+      (bulletSlowUpgrade ? 0.9 : 1);
+
+    // 購入した自動回復。HPが最大のときは回復を保留せず、次の周期を待つ。
+    if (healInterval > 0) {
+      healTimer += dt;
+      if (healTimer >= healInterval) {
+        healTimer -= healInterval;
+        if (player.lives < player.maxLives) {
+          player.lives = Math.min(player.maxLives, player.lives + 1);
+          shopMessage = "AUTO HEAL +1 HP";
+          messageTimer = 1.2;
+        }
+      }
+    }
 
     // Player movement.
     let dx = 0;
@@ -1133,37 +1153,71 @@
   // Shop
   // -------------------------
 
-  function drawShop() {
-    text("SHOP", W / 2, H * 0.105, 27, C.gold, "center");
-    text(`YOUR GOLD: ${gold}`, W / 2, H * 0.18, 15, C.white, "center");
-
+  function getShopItems() {
     const items = [];
     for (let target = 2; target <= 5; target++) {
       const owned = unlockedStages.has(target);
       items.push({
-        stage: target,
+        kind: "stage",
+        target,
         label: owned ? `PLAY STAGE ${target}` : `UNLOCK STAGE ${target}`,
         detail: owned
           ? `OWNED - ${STAGE_REWARDS[target]} GOLD / 10S`
           : `COST: ${STAGE_COSTS[target]} GOLD | REWARD: ${STAGE_REWARDS[target]} / 10S`
       });
     }
-    items.push({ stage: 1, label: "PLAY STAGE 1", detail: "FREE - 1 GOLD / 10S" });
-    items.push({ stage: 0, label: "BACK TO TITLE", detail: "RETURN TO MAIN MENU" });
+    items.push({ kind: "stage", target: 1, label: "PLAY STAGE 1", detail: "FREE - 1 GOLD / 10S" });
+    items.push({
+      kind: "heal",
+      target: 60,
+      label: healInterval === 60 ? "AUTO HEAL (OWNED)" : "AUTO HEAL - EVERY 60 SEC",
+      detail: healInterval === 60 ? "OWNED - HEAL 1 HP EVERY 60 SEC" : "COST: 10 GOLD"
+    });
+    items.push({
+      kind: "heal",
+      target: 45,
+      label: healInterval === 45 ? "AUTO HEAL LV2 (OWNED)" : "AUTO HEAL LV2 - EVERY 45 SEC",
+      detail: healInterval === 45 ? "OWNED - HEAL 1 HP EVERY 45 SEC" : "COST: 20 GOLD - REQUIRES LV1"
+    });
+    items.push({
+      kind: "heal",
+      target: 30,
+      label: healInterval === 30 ? "AUTO HEAL LV3 (OWNED)" : "AUTO HEAL LV3 - EVERY 30 SEC",
+      detail: healInterval === 30 ? "OWNED - HEAL 1 HP EVERY 30 SEC" : "COST: 30 GOLD - REQUIRES LV2"
+    });
+    items.push({
+      kind: "maxhp",
+      target: 1,
+      label: bonusMaxLives ? "HEART CONTAINER (OWNED)" : "HEART CONTAINER - +1 MAX HP",
+      detail: bonusMaxLives ? "OWNED - START EACH RUN WITH 4 HP" : "COST: 35 GOLD"
+    });
+    items.push({
+      kind: "slow",
+      target: 1,
+      label: bulletSlowUpgrade ? "BULLET GUARD (OWNED)" : "BULLET GUARD - 10% SLOWER BULLETS",
+      detail: bulletSlowUpgrade ? "OWNED - BULLETS 10% SLOWER" : "COST: 80 GOLD"
+    });
+    items.push({ kind: "back", target: 0, label: "BACK TO TITLE", detail: "RETURN TO MAIN MENU" });
+    return items;
+  }
 
-    const startY = H * 0.29;
-    const gap = Math.min(50, H * 0.094);
+  function drawShop() {
+    text("SHOP", W / 2, H * 0.07, 25, C.gold, "center");
+    text(`YOUR GOLD: ${gold}`, W / 2, H * 0.125, 14, C.white, "center");
+    const items = getShopItems();
+    const startY = H * 0.19;
+    const gap = Math.min(38, H * 0.071);
     items.forEach((item, i) => {
-      drawButton(item.label, W / 2, startY + i * gap, menuIndex === i, Math.min(W - 24, 420), 37);
-      text(item.detail, W / 2, startY + i * gap + 20, 9, C.muted, "center");
+      const y = startY + i * gap;
+      drawButton(item.label, W / 2, y, menuIndex === i, Math.min(W - 24, 460), 29);
+      text(item.detail, W / 2, y + 15, 8, C.muted, "center");
     });
 
     if (messageTimer > 0 && shopMessage) {
-      text(shopMessage, W / 2, H * 0.87, 11, C.orange, "center");
+      text(shopMessage, W / 2, H * 0.91, 10, C.orange, "center");
     }
-
-    text("UP / DOWN: SELECT   SPACE: CONFIRM", W / 2, H * 0.945, 10, C.muted, "center");
-    text("ADMIN: CTRL + SHIFT + 5", W / 2, H * 0.985, 9, C.muted, "center");
+    text("UP / DOWN: SELECT   SPACE: CONFIRM", W / 2, H * 0.96, 9, C.muted, "center");
+    text("ADMIN: CTRL + SHIFT + 5", W / 2, H * 0.99, 8, C.muted, "center");
   }
 
   // -------------------------
@@ -1404,7 +1458,7 @@
     text(`GOLD ${gold}`, W - 18, 22, 15, C.gold, "right");
 
     text(
-      `HP ${"♥".repeat(Math.max(0, player.lives))}`,
+      `HP ${"♥".repeat(Math.max(0, player.lives))}${"♡".repeat(Math.max(0, player.maxLives - player.lives))}`,
       18,
       45,
       14,
@@ -1522,7 +1576,7 @@
   function menuLength() {
     if (mode === "title") return 2;
     if (mode === "stageSelect") return 6;
-    if (mode === "shop") return 6;
+    if (mode === "shop") return getShopItems().length;
     if (mode === "pause") return 2;
     if (mode === "gameover") return 2;
     if (mode === "adminPanel") return 4;
@@ -1566,8 +1620,11 @@
     }
 
     if (mode === "shop") {
-      if (menuIndex >= 0 && menuIndex <= 3) {
-        const selectedStage = menuIndex + 2;
+      const item = getShopItems()[menuIndex];
+      if (!item) return;
+
+      if (item.kind === "stage") {
+        const selectedStage = item.target;
         if (unlockedStages.has(selectedStage)) {
           startRun(selectedStage);
         } else if (gold >= STAGE_COSTS[selectedStage]) {
@@ -1579,9 +1636,53 @@
           shopMessage = `GOLDが足りない！ あと${STAGE_COSTS[selectedStage] - gold} GOLD必要`;
           messageTimer = 3;
         }
-      } else if (menuIndex === 4) {
-        startRun(1);
-      } else {
+      } else if (item.kind === "heal") {
+        const level = item.target === 60 ? 1 : item.target === 45 ? 2 : 3;
+        const currentLevel = healInterval === 0 ? 0 : healInterval === 60 ? 1 : healInterval === 45 ? 2 : 3;
+        const costs = { 60: 10, 45: 20, 30: 30 };
+        if (currentLevel >= level) {
+          shopMessage = "その回復レベルは購入済みだよ";
+          messageTimer = 2;
+        } else if (level !== currentLevel + 1) {
+          shopMessage = "先にひとつ前のレベルを購入してね";
+          messageTimer = 2.5;
+        } else if (gold < costs[item.target]) {
+          shopMessage = `GOLDが足りない！ あと${costs[item.target] - gold} GOLD必要`;
+          messageTimer = 2.5;
+        } else {
+          gold -= costs[item.target];
+          healInterval = item.target;
+          healTimer = 0;
+          shopMessage = `AUTO HEAL LV${level} PURCHASED!`;
+          messageTimer = 2.5;
+        }
+      } else if (item.kind === "maxhp") {
+        if (bonusMaxLives) {
+          shopMessage = "HEART CONTAINERは購入済みだよ";
+          messageTimer = 2;
+        } else if (gold < 35) {
+          shopMessage = "GOLDが足りない！ あと" + (35 - gold) + " GOLD必要";
+          messageTimer = 2.5;
+        } else {
+          gold -= 35;
+          bonusMaxLives = 1;
+          shopMessage = "MAX HP +1 PURCHASED!";
+          messageTimer = 2.5;
+        }
+      } else if (item.kind === "slow") {
+        if (bulletSlowUpgrade) {
+          shopMessage = "BULLET GUARDは購入済みだよ";
+          messageTimer = 2;
+        } else if (gold < 80) {
+          shopMessage = "GOLDが足りない！ あと" + (80 - gold) + " GOLD必要";
+          messageTimer = 2.5;
+        } else {
+          gold -= 80;
+          bulletSlowUpgrade = true;
+          shopMessage = "BULLET GUARD PURCHASED!";
+          messageTimer = 2.5;
+        }
+      } else if (item.kind === "back") {
         showTitle();
       }
       return;
@@ -1902,11 +2003,11 @@
     }
 
     if (mode === "shop") {
-      const startY = H * 0.29;
-      const gap = Math.min(50, H * 0.094);
+      const startY = H * 0.19;
+      const gap = Math.min(38, H * 0.071);
       const index = Math.round((y - startY) / gap);
 
-      if (index >= 0 && index < 6) {
+      if (index >= 0 && index < getShopItems().length) {
         menuIndex = index;
         confirmMenu();
       }
