@@ -40,6 +40,7 @@
   let healTimer = 0;
   let bonusMaxLives = 0;
   let bulletSlowUpgrade = false;
+  let moveSpeedLevel = 0; // 0〜4、最大で通常速度の2倍
 
   let menuIndex = 0;
   let shopMessage = "";
@@ -460,13 +461,13 @@
     }
 
     player.x = clamp(
-      player.x + dx * player.speed * dt,
+      player.x + dx * player.speed * (1 + moveSpeedLevel * 0.25) * dt,
       12,
       W - 12
     );
 
     player.y = clamp(
-      player.y + dy * player.speed * dt,
+      player.y + dy * player.speed * (1 + moveSpeedLevel * 0.25) * dt,
       45,
       H - 18
     );
@@ -581,7 +582,7 @@
         // 4〜6方向から一斉に攻撃。間隔も短くして高密度の弾幕に。
         const burstCount = Math.random() < 0.55 ? 6 : 4 + Math.floor(Math.random() * 2);
         for (let i = 0; i < burstCount; i++) edgeBurst();
-        edgeTimer = rand(0.42, 0.72);
+        edgeTimer = rand(0.22, 0.38);
       }
     }
 
@@ -1185,6 +1186,15 @@
       label: healInterval === 30 ? "AUTO HEAL LV3 (OWNED)" : "AUTO HEAL LV3 - EVERY 30 SEC",
       detail: healInterval === 30 ? "OWNED - HEAL 1 HP EVERY 30 SEC" : "COST: 30 GOLD - REQUIRES LV2"
     });
+    for (let level = 1; level <= 4; level++) {
+      const cost = level * 15;
+      items.push({
+        kind: "speed",
+        target: level,
+        label: moveSpeedLevel >= level ? `MOVE SPEED LV${level} (OWNED)` : `MOVE SPEED LV${level} - ${(1 + level * 0.25).toFixed(2)}X`,
+        detail: moveSpeedLevel >= level ? "OWNED" : `COST: ${cost} GOLD${level === moveSpeedLevel + 1 ? "" : " - REQUIRES PREVIOUS LV"}`
+      });
+    }
     items.push({
       kind: "maxhp",
       target: 1,
@@ -1654,6 +1664,24 @@
           healInterval = item.target;
           healTimer = 0;
           shopMessage = `AUTO HEAL LV${level} PURCHASED!`;
+          messageTimer = 2.5;
+        }
+      } else if (item.kind === "speed") {
+        const level = item.target;
+        const cost = level * 15;
+        if (moveSpeedLevel >= level) {
+          shopMessage = "その移動速度レベルは購入済みだよ";
+          messageTimer = 2;
+        } else if (level !== moveSpeedLevel + 1) {
+          shopMessage = "先にひとつ前のレベルを購入してね";
+          messageTimer = 2.5;
+        } else if (gold < cost) {
+          shopMessage = "GOLDが足りない！ あと" + (cost - gold) + " GOLD必要";
+          messageTimer = 2.5;
+        } else {
+          gold -= cost;
+          moveSpeedLevel = level;
+          shopMessage = `MOVE SPEED LV${level} PURCHASED!`;
           messageTimer = 2.5;
         }
       } else if (item.kind === "maxhp") {
