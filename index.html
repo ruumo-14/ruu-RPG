@@ -1,12 +1,90 @@
-<!doctype html>
+
+<!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Redirecting to RPG</title>
-  <meta http-equiv="refresh" content="0; url=rpg.html" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Ruu RPG</title>
+
+  <meta
+    name="description"
+    content="Ruu RPG - 冒険を始めよう！"
+  >
+
+  <!-- ゲーム全体のスタイル -->
+  <link rel="stylesheet" href="rpg.css">
 </head>
+
 <body>
-  <p>Redirecting to <a href="rpg.html">rpg.html</a>... If you are not redirected automatically, click the link.</p>
+  <main id="app">
+    <section id="title-screen" class="title-screen">
+      <div class="title-content">
+        <h1>Ruu RPG</h1>
+
+        <p class="subtitle">
+          自分だけの冒険を始めよう
+        </p>
+
+        <button
+          id="start-button"
+          type="button"
+          aria-label="ゲームを開始する"
+        >
+          Press Space
+        </button>
+
+        <p class="controls">
+          キーボードの SPACE キーでスタート
+        </p>
+      </div>
+    </section>
+
+    <!-- ゲーム本体 -->
+    <section id="game-container" hidden>
+      <iframe
+        id="game-frame"
+        title="Ruu RPG ゲーム画面"
+        src="rpg.html"
+        width="100%"
+        height="100%"
+        frameborder="0"
+      ></iframe>
+    </section>
+  </main>
+
+  <script>
+    (() => {
+      "use strict";
+
+      const titleScreen = document.getElementById("title-screen");
+      const gameContainer = document.getElementById("game-container");
+      const startButton = document.getElementById("start-button");
+
+      let gameStarted = false;
+
+      function startGame() {
+        if (gameStarted) return;
+
+        gameStarted = true;
+
+        titleScreen.hidden = true;
+        gameContainer.hidden = false;
+      }
+
+      startButton.addEventListener("click", startGame);
+
+      document.addEventListener("keydown", (event) => {
+        if (event.code !== "Space") return;
+
+        // ページのスクロールを防ぐ
+        event.preventDefault();
+
+        if (!gameStarted) {
+          startGame();
+        }
+      });
+    })();
+  </script>
 </body>
 </html>
