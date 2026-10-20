@@ -35,6 +35,12 @@
   let goldTimer = 0;
   let hitFlash = 0;
   let bulletSpeedMultiplier = 1;
+  // ショップで購入した永続アップグレード
+  let healInterval = 0; // 0=未購入、60 / 45 / 30秒
+  let healTimer = 0;
+  let bonusMaxLives = 0;
+  let bulletSlowUpgrade = false;
+  let moveSpeedLevel = 0; // 0〜4、最大で通常速度の2倍
 
   let menuIndex = 0;
   let shopMessage = "";
@@ -56,7 +62,7 @@
   let shotTimers = [];
   let radialTimers = [];
 
-  let edgeTimer = 6;
+  let edgeTimer = 0.25; // Stage 2開始直後から画面端攻撃を始める
   let patternTick = 0;
 
   const player = {
@@ -65,12 +71,26 @@
     r: 5,
     speed: 310,
     lives: 3,
+    maxLives: 3,
     invuln: 0
   };
 
+  // 各ステージの購入価格。報酬と難易度が段階的に上がるよう設定。
   const STAGE_COSTS = {
     1: 0,
-    2: 50
+    2: 50,
+    3: 250,
+    4: 1000,
+    5: 4000
+  };
+
+  // 10秒ごとの基本報酬。従来どおり30秒ごとに2倍になる。
+  const STAGE_REWARDS = {
+    1: 1,
+    2: 3,
+    3: 7,
+    4: 15,
+    5: 50
   };
 
   const clamp = (v, min, max) =>
@@ -116,40 +136,40 @@
   // Enemy positions
   // -------------------------
 
-  // STAGE 1: three enemies.
-  // STAGE 2: one central boss.
+  // 各ステージの敵配置。Stage 1は中央の敵のイラストを3体で共有する。
   function positionEnemies() {
     if (stage === 1) {
       enemies = [
-        {
-          x: W * 0.5,
-          y: H * 0.16,
-          name: "CENTER",
-          type: "stage1-center"
-        },
-        {
-          x: W * 0.19,
-          y: H * 0.29,
-          name: "LEFT",
-          type: "stage1-left"
-        },
-        {
-          x: W * 0.81,
-          y: H * 0.29,
-          name: "RIGHT",
-          type: "stage1-right"
-        }
+        { x: W * 0.5, y: H * 0.16, name: "CENTER", type: "stage1-center" },
+        { x: W * 0.19, y: H * 0.29, name: "LEFT", type: "stage1-center" },
+        { x: W * 0.81, y: H * 0.29, name: "RIGHT", type: "stage1-center" }
       ];
-    } else {
-      enemies = [
-        {
-          x: W * 0.5,
-          y: H * 0.18,
-          name: "BOSS",
-          type: "stage2-boss"
-        }
-      ];
+      return;
     }
+
+    if (stage === 4) {
+      enemies = [
+        { x: W * 0.34, y: H * 0.18, name: "LEFT GUARDIAN", type: "stage4-guardian" },
+        { x: W * 0.66, y: H * 0.18, name: "RIGHT GUARDIAN", type: "stage4-guardian" }
+      ];
+      return;
+    }
+
+    const bossType = {
+      2: "stage2-boss",
+      3: "stage3-oracle",
+      5: "stage5-final"
+    }[stage] || "stage2-boss";
+
+    const bossName = {
+      2: "BOSS",
+      3: "ORACLE",
+      5: "FINAL BOSS"
+    }[stage] || "BOSS";
+
+    enemies = [
+      { x: W * 0.5, y: H * 0.18, name: bossName, type: bossType }
+    ];
   }
 
   // -------------------------
@@ -206,6 +226,8 @@
     runGold = 0;
     hitFlash = 0;
     bulletSpeedMultiplier = 1;
+    healTimer = 0;
+    player.maxLives = 3 + bonusMaxLives;
 
     bullets = [];
     particles = [];
@@ -214,11 +236,11 @@
     shotTimers = [];
     radialTimers = [];
 
-    // STAGE 2の端攻撃は開始直後から少し早めに発生。
-    edgeTimer = stage === 2 ? 2.5 : 5;
+    // Stage 2は端から複数攻撃、Stage 5は終盤の追加バラージ。
+    edgeTimer = stage === 2 ? 0.35 : stage === 5 ? 2.0 : 9999;
     patternTick = 0;
 
-    player.lives = 3;
+    player.lives = player.maxLives;
     player.invuln = 1.2;
 
     resetPlayer();
@@ -348,7 +370,8 @@
       x,
       y,
       angle,
-      life: 0.8,
+      // 予告を短くして、端攻撃が次々と押し寄せるようにする。
+      life: 0.38,
       fired: false
     });
   }
@@ -387,9 +410,21 @@
     const tier = Math.floor(elapsed / 30);
 
     bulletSpeedMultiplier =
-      1 +
-      0.65 * tier +
-      0.15 * tier * (tier - 1) / 2;
+      (1 + 0.65 * tier + 0.15 * tier * (tier - 1) / 2) *
+      (bulletSlowUpgrade ? 0.9 : 1);
+
+    // 購入した自動回復。HPが最大のときは回復を保留せず、次の周期を待つ。
+    if (healInterval > 0) {
+      healTimer += dt;
+      if (healTimer >= healInterval) {
+        healTimer -= healInterval;
+        if (player.lives < player.maxLives) {
+          player.lives = Math.min(player.maxLives, player.lives + 1);
+          shopMessage = "AUTO HEAL +1 HP";
+          messageTimer = 1.2;
+        }
+      }
+    }
 
     // Player movement.
     let dx = 0;
@@ -426,13 +461,13 @@
     }
 
     player.x = clamp(
-      player.x + dx * player.speed * dt,
+      player.x + dx * player.speed * (1 + moveSpeedLevel * 0.25) * dt,
       12,
       W - 12
     );
 
     player.y = clamp(
-      player.y + dy * player.speed * dt,
+      player.y + dy * player.speed * (1 + moveSpeedLevel * 0.25) * dt,
       45,
       H - 18
     );
@@ -527,14 +562,11 @@
     }
 
     // =========================
-    // STAGE 2: radial + edge
-    // 中央の敵の攻撃は変更せず、
-    // 画面端の攻撃頻度だけを増加。
+    // STAGE 2: radial + frequent multi-edge bursts
+    // 画面端から2〜3方向の予告を同時に発生させる。
     // =========================
-
     if (stage === 2) {
       radialTimers[0] -= dt;
-
       if (radialTimers[0] <= 0) {
         radialShot(
           enemies[0],
@@ -542,17 +574,87 @@
           155 + Math.min(45, elapsed * 0.6),
           patternTick * 0.16
         );
-
         radialTimers[0] = 2.05;
       }
 
       edgeTimer -= dt;
-
       if (edgeTimer <= 0) {
-        edgeBurst();
+        // 4〜6方向から一斉に攻撃。間隔も短くして高密度の弾幕に。
+        const burstCount = Math.random() < 0.55 ? 6 : 4 + Math.floor(Math.random() * 2);
+        for (let i = 0; i < burstCount; i++) edgeBurst();
+        edgeTimer = rand(0.22, 0.38);
+      }
+    }
 
-        // 変更前の5.5〜8.5秒から、2.2〜4秒に短縮。
-        edgeTimer = rand(2.2, 4.0);
+    // =========================
+    // STAGE 3: rotating cross-ring + aimed cyan fans
+    // 複数方向の輪と、プレイヤーを狙う小さな扇状弾を交互に使う。
+    // =========================
+    if (stage === 3) {
+      const enemy = enemies[0];
+      shotTimers[0] -= dt;
+      if (shotTimers[0] <= 0) {
+        fanShot(enemy, 5, 0.62, 195 + Math.min(30, elapsed * 0.3), C.cyan);
+        aimedShot(enemy, 225, C.blue);
+        shotTimers[0] = Math.max(0.72, 1.45 - elapsed * 0.002);
+      }
+
+      radialTimers[0] -= dt;
+      if (radialTimers[0] <= 0) {
+        radialShot(enemy, 12, 142 + Math.min(25, elapsed * 0.25), patternTick * 0.48, C.cyan);
+        radialShot(enemy, 4, 175, patternTick * 0.48 + Math.PI / 4, C.blue);
+        radialTimers[0] = 3.0;
+      }
+    }
+
+    // =========================
+    // STAGE 4: twin guardians + crossed fans
+    // 左右の守護者が交互に扇状弾を撃ち、周期的に輪を重ねる。
+    // =========================
+    if (stage === 4) {
+      for (let i = 0; i < enemies.length; i++) {
+        const enemy = enemies[i];
+        shotTimers[i] -= dt;
+        if (shotTimers[i] <= 0) {
+          fanShot(enemy, 7, 0.78, 205 + Math.min(35, elapsed * 0.25), i === 0 ? C.orange : C.pink);
+          aimedShot(enemy, 220, C.purple);
+          shotTimers[i] = Math.max(0.72, 1.15 - elapsed * 0.0015) + i * 0.16;
+        }
+
+        radialTimers[i] -= dt;
+        if (radialTimers[i] <= 0) {
+          radialShot(enemy, 10, 148, (i === 0 ? 1 : -1) * patternTick * 0.22, i === 0 ? C.orange : C.pink);
+          fanShot(enemy, 5, 1.25, 178, C.purple);
+          radialTimers[i] = 3.25 + i * 0.45;
+        }
+      }
+    }
+
+    // =========================
+    // STAGE 5: final spiral + heavy edge barrage
+    // 回転する20方向の弾幕、狙い撃ちの扇、端からの追加攻撃。
+    // =========================
+    if (stage === 5) {
+      const enemy = enemies[0];
+      shotTimers[0] -= dt;
+      if (shotTimers[0] <= 0) {
+        fanShot(enemy, 7, 1.02, 230 + Math.min(45, elapsed * 0.25), C.red);
+        aimedShot(enemy, 250, C.orange);
+        shotTimers[0] = Math.max(0.62, 0.95 - elapsed * 0.001);
+      }
+
+      radialTimers[0] -= dt;
+      if (radialTimers[0] <= 0) {
+        radialShot(enemy, 20, 150 + Math.min(35, elapsed * 0.3), patternTick * 0.56, C.purple);
+        radialShot(enemy, 8, 185, -patternTick * 0.38, C.cyan);
+        radialTimers[0] = 2.45;
+      }
+
+      edgeTimer -= dt;
+      if (edgeTimer <= 0) {
+        const burstCount = Math.random() < 0.6 ? 3 : 2;
+        for (let i = 0; i < burstCount; i++) edgeBurst();
+        edgeTimer = rand(2.0, 2.8);
       }
     }
 
@@ -563,13 +665,15 @@
       if (warning.life <= 0 && !warning.fired) {
         warning.fired = true;
 
-        for (let i = -3; i <= 3; i++) {
+        // 9発の扇状弾を速めに放ち、複数の端攻撃が重なるようにする。
+        for (let i = -4; i <= 4; i++) {
           fire(
             warning.x,
             warning.y,
-            warning.angle + i * 0.15,
-            235,
-            C.orange
+            warning.angle + i * 0.12,
+            270,
+            C.orange,
+            3.5
           );
         }
       }
@@ -642,7 +746,7 @@
       goldTimer -= 10;
 
       const goldTier = Math.floor(elapsed / 30);
-      const baseReward = stage === 2 ? 3 : 1;
+      const baseReward = STAGE_REWARDS[stage] || 1;
       const reward = baseReward * Math.pow(2, goldTier);
 
       addGold(reward);
@@ -749,6 +853,59 @@
       // Side energy blocks.
       rect(x - 34, y - 1, 4, 7, C.cyan);
       rect(x + 30, y - 1, 4, 7, C.cyan);
+      return;
+    }
+
+    // STAGE 3: cyan oracle with a rotating crystal.
+    if (enemy.type === "stage3-oracle") {
+      rect(x - 19, y - 14, 38, 28, C.cyan);
+      rect(x - 11, y - 22, 22, 8, C.blue);
+      rect(x - 5, y - 29, 10, 7, C.white);
+      rect(x - 12, y - 5, 7, 8, C.bg);
+      rect(x + 5, y - 5, 7, 8, C.bg);
+      rect(x - 9, y - 3, 2, 3, C.white);
+      rect(x + 8, y - 3, 2, 3, C.white);
+      rect(x - 7, y + 8, 14, 4, C.blue);
+      rect(x - 27, y - 1, 7, 5, C.blue);
+      rect(x + 20, y - 1, 7, 5, C.blue);
+      rect(x - 4, y + 14, 8, 7, C.cyan);
+      return;
+    }
+
+    // STAGE 4: twin armored guardians.
+    if (enemy.type === "stage4-guardian") {
+      rect(x - 20, y - 13, 40, 27, C.orange);
+      rect(x - 26, y - 6, 6, 14, C.purple);
+      rect(x + 20, y - 6, 6, 14, C.purple);
+      rect(x - 14, y - 21, 8, 8, C.gold);
+      rect(x + 6, y - 21, 8, 8, C.gold);
+      rect(x - 12, y - 3, 8, 7, C.bg);
+      rect(x + 4, y - 3, 8, 7, C.bg);
+      rect(x - 10, y - 1, 3, 3, C.white);
+      rect(x + 6, y - 1, 3, 3, C.white);
+      rect(x - 8, y + 8, 16, 4, C.bg);
+      rect(x - 15, y + 14, 9, 6, C.orange);
+      rect(x + 6, y + 14, 9, 6, C.orange);
+      return;
+    }
+
+    // STAGE 5: final boss, larger dark core with crimson horns.
+    if (enemy.type === "stage5-final") {
+      rect(x - 29, y - 19, 58, 37, C.purple);
+      rect(x - 22, y - 28, 12, 10, C.red);
+      rect(x + 10, y - 28, 12, 10, C.red);
+      rect(x - 15, y - 34, 8, 9, C.orange);
+      rect(x + 7, y - 34, 8, 9, C.orange);
+      rect(x - 20, y - 11, 12, 10, C.red);
+      rect(x + 8, y - 11, 12, 10, C.red);
+      rect(x - 16, y - 8, 4, 4, C.white);
+      rect(x + 12, y - 8, 4, 4, C.white);
+      rect(x - 12, y + 5, 24, 5, C.bg);
+      rect(x - 18, y + 19, 10, 8, C.purple);
+      rect(x + 8, y + 19, 10, 8, C.purple);
+      rect(x - 5, y + 19, 10, 5, C.cyan);
+      rect(x - 37, y - 1, 7, 10, C.cyan);
+      rect(x + 30, y - 1, 7, 10, C.cyan);
       return;
     }
 
@@ -959,163 +1116,118 @@
   // -------------------------
 
   function drawStageSelect() {
-    text(
-      "SELECT STAGE",
-      W / 2,
-      H * 0.16,
-      27,
-      C.white,
-      "center"
-    );
+    text("SELECT STAGE", W / 2, H * 0.105, 25, C.white, "center");
+    text(`YOUR GOLD: ${gold}`, W / 2, H * 0.17, 15, C.gold, "center");
 
-    text(
-      `YOUR GOLD: ${gold}`,
-      W / 2,
-      H * 0.25,
-      16,
-      C.gold,
-      "center"
-    );
+    const descriptions = {
+      1: "AIMED + RADIAL + FAN",
+      2: "RADIAL + MULTI EDGE BURSTS",
+      3: "ROTATING CROSS RING + CYAN FANS",
+      4: "TWIN GUARDIANS + CROSSED FANS",
+      5: "FINAL SPIRAL + EDGE BARRAGE"
+    };
 
-    const items = [
-      {
-        label: "STAGE 1 - PLAY",
-        detail: "AIMED + THREE ENEMIES",
-        unlocked: unlockedStages.has(1)
-      },
-      {
-        label: unlockedStages.has(2)
-          ? "STAGE 2 - PLAY"
-          : "STAGE 2 - LOCKED",
-        detail: unlockedStages.has(2)
-          ? "RADIAL + EDGE ATTACKS"
-          : `BUY FOR ${STAGE_COSTS[2]} GOLD IN SHOP`,
-        unlocked: unlockedStages.has(2)
-      },
-      {
-        label: "BACK",
-        detail: "RETURN TO TITLE",
-        unlocked: true
-      }
-    ];
+    const items = [];
+    for (let target = 1; target <= 5; target++) {
+      const unlocked = unlockedStages.has(target);
+      items.push({
+        label: target === 1 ? "STAGE 1 - PLAY" : `STAGE ${target} - ${unlocked ? "PLAY" : "LOCKED"}`,
+        detail: unlocked
+          ? `${descriptions[target]} | ${STAGE_REWARDS[target]} GOLD / 10S`
+          : `BUY FOR ${STAGE_COSTS[target]} GOLD IN SHOP`,
+        unlocked
+      });
+    }
+    items.push({ label: "BACK", detail: "RETURN TO TITLE", unlocked: true });
 
-    const startY = H * 0.39;
-    const gap = Math.min(68, H * 0.13);
-
+    const startY = H * 0.26;
+    const gap = Math.min(47, H * 0.096);
     items.forEach((item, i) => {
-      drawButton(
-        item.label,
-        W / 2,
-        startY + i * gap,
-        menuIndex === i,
-        Math.min(W - 36, 380),
-        42
-      );
-
-      text(
-        item.detail,
-        W / 2,
-        startY + i * gap + 25,
-        10,
-        item.unlocked ? C.muted : C.orange,
-        "center"
-      );
+      drawButton(item.label, W / 2, startY + i * gap, menuIndex === i, Math.min(W - 28, 420), 36);
+      text(item.detail, W / 2, startY + i * gap + 20, 9, item.unlocked ? C.muted : C.orange, "center");
     });
 
-    text(
-      "UP / DOWN: SELECT   SPACE: CONFIRM",
-      W / 2,
-      H * 0.9,
-      12,
-      C.muted,
-      "center"
-    );
+    text("UP / DOWN: SELECT   SPACE: CONFIRM", W / 2, H * 0.93, 11, C.muted, "center");
   }
 
   // -------------------------
   // Shop
   // -------------------------
 
+  function getShopItems() {
+    const items = [];
+    for (let target = 2; target <= 5; target++) {
+      const owned = unlockedStages.has(target);
+      items.push({
+        kind: "stage",
+        target,
+        label: owned ? `PLAY STAGE ${target}` : `UNLOCK STAGE ${target}`,
+        detail: owned
+          ? `OWNED - ${STAGE_REWARDS[target]} GOLD / 10S`
+          : `COST: ${STAGE_COSTS[target]} GOLD | REWARD: ${STAGE_REWARDS[target]} / 10S`
+      });
+    }
+    items.push({ kind: "stage", target: 1, label: "PLAY STAGE 1", detail: "FREE - 1 GOLD / 10S" });
+    items.push({
+      kind: "heal",
+      target: 60,
+      label: healInterval === 60 ? "AUTO HEAL (OWNED)" : "AUTO HEAL - EVERY 60 SEC",
+      detail: healInterval === 60 ? "OWNED - HEAL 1 HP EVERY 60 SEC" : "COST: 10 GOLD"
+    });
+    items.push({
+      kind: "heal",
+      target: 45,
+      label: healInterval === 45 ? "AUTO HEAL LV2 (OWNED)" : "AUTO HEAL LV2 - EVERY 45 SEC",
+      detail: healInterval === 45 ? "OWNED - HEAL 1 HP EVERY 45 SEC" : "COST: 20 GOLD - REQUIRES LV1"
+    });
+    items.push({
+      kind: "heal",
+      target: 30,
+      label: healInterval === 30 ? "AUTO HEAL LV3 (OWNED)" : "AUTO HEAL LV3 - EVERY 30 SEC",
+      detail: healInterval === 30 ? "OWNED - HEAL 1 HP EVERY 30 SEC" : "COST: 30 GOLD - REQUIRES LV2"
+    });
+    for (let level = 1; level <= 4; level++) {
+      const cost = level * 15;
+      items.push({
+        kind: "speed",
+        target: level,
+        label: moveSpeedLevel >= level ? `MOVE SPEED LV${level} (OWNED)` : `MOVE SPEED LV${level} - ${(1 + level * 0.25).toFixed(2)}X`,
+        detail: moveSpeedLevel >= level ? "OWNED" : `COST: ${cost} GOLD${level === moveSpeedLevel + 1 ? "" : " - REQUIRES PREVIOUS LV"}`
+      });
+    }
+    items.push({
+      kind: "maxhp",
+      target: 1,
+      label: bonusMaxLives ? "HEART CONTAINER (OWNED)" : "HEART CONTAINER - +1 MAX HP",
+      detail: bonusMaxLives ? "OWNED - START EACH RUN WITH 4 HP" : "COST: 35 GOLD"
+    });
+    items.push({
+      kind: "slow",
+      target: 1,
+      label: bulletSlowUpgrade ? "BULLET GUARD (OWNED)" : "BULLET GUARD - 10% SLOWER BULLETS",
+      detail: bulletSlowUpgrade ? "OWNED - BULLETS 10% SLOWER" : "COST: 80 GOLD"
+    });
+    items.push({ kind: "back", target: 0, label: "BACK TO TITLE", detail: "RETURN TO MAIN MENU" });
+    return items;
+  }
+
   function drawShop() {
-    text("SHOP", W / 2, H * 0.13, 30, C.gold, "center");
-
-    text(
-      `YOUR GOLD: ${gold}`,
-      W / 2,
-      H * 0.22,
-      17,
-      C.white,
-      "center"
-    );
-
-    const items = [
-      {
-        label: "BUY / PLAY STAGE 2",
-        detail: unlockedStages.has(2)
-          ? "ALREADY OWNED - FREE TO PLAY"
-          : `COST: ${STAGE_COSTS[2]} GOLD`
-      },
-      {
-        label: "PLAY STAGE 1",
-        detail: "FREE"
-      },
-      {
-        label: "BACK TO TITLE",
-        detail: "RETURN TO MAIN MENU"
-      }
-    ];
-
-    const startY = H * 0.4;
-    const gap = Math.min(70, H * 0.14);
-
+    text("SHOP", W / 2, H * 0.07, 25, C.gold, "center");
+    text(`YOUR GOLD: ${gold}`, W / 2, H * 0.125, 14, C.white, "center");
+    const items = getShopItems();
+    const startY = H * 0.19;
+    const gap = Math.min(38, H * 0.071);
     items.forEach((item, i) => {
-      drawButton(
-        item.label,
-        W / 2,
-        startY + i * gap,
-        menuIndex === i,
-        Math.min(W - 30, 390),
-        44
-      );
-
-      text(
-        item.detail,
-        W / 2,
-        startY + i * gap + 25,
-        11,
-        C.muted,
-        "center"
-      );
+      const y = startY + i * gap;
+      drawButton(item.label, W / 2, y, menuIndex === i, Math.min(W - 24, 460), 29);
+      text(item.detail, W / 2, y + 15, 8, C.muted, "center");
     });
 
     if (messageTimer > 0 && shopMessage) {
-      text(
-        shopMessage,
-        W / 2,
-        H * 0.88,
-        12,
-        C.orange,
-        "center"
-      );
+      text(shopMessage, W / 2, H * 0.91, 10, C.orange, "center");
     }
-
-    text(
-      "UP / DOWN: SELECT   SPACE: CONFIRM",
-      W / 2,
-      H * 0.95,
-      11,
-      C.muted,
-      "center"
-    );
-
-    text(
-      "ADMIN: CTRL + SHIFT + 5",
-      W / 2,
-      H * 0.99 - 2,
-      9,
-      C.muted,
-      "center"
-    );
+    text("UP / DOWN: SELECT   SPACE: CONFIRM", W / 2, H * 0.96, 9, C.muted, "center");
+    text("ADMIN: CTRL + SHIFT + 5", W / 2, H * 0.99, 8, C.muted, "center");
   }
 
   // -------------------------
@@ -1356,7 +1468,7 @@
     text(`GOLD ${gold}`, W - 18, 22, 15, C.gold, "right");
 
     text(
-      `HP ${"♥".repeat(Math.max(0, player.lives))}`,
+      `HP ${"♥".repeat(Math.max(0, player.lives))}${"♡".repeat(Math.max(0, player.maxLives - player.lives))}`,
       18,
       45,
       14,
@@ -1473,8 +1585,8 @@
 
   function menuLength() {
     if (mode === "title") return 2;
-    if (mode === "stageSelect") return 3;
-    if (mode === "shop") return 3;
+    if (mode === "stageSelect") return 6;
+    if (mode === "shop") return getShopItems().length;
     if (mode === "pause") return 2;
     if (mode === "gameover") return 2;
     if (mode === "adminPanel") return 4;
@@ -1501,51 +1613,106 @@
     }
 
     if (mode === "stageSelect") {
-      if (menuIndex === 0) {
-        startRun(1);
-      } else if (menuIndex === 1) {
-        if (unlockedStages.has(2)) {
-          startRun(2);
+      if (menuIndex >= 0 && menuIndex <= 4) {
+        const selectedStage = menuIndex + 1;
+        if (unlockedStages.has(selectedStage)) {
+          startRun(selectedStage);
         } else {
           openShop();
-          menuIndex = 0;
-          shopMessage = "Stage 2を購入してね";
+          menuIndex = selectedStage - 2;
+          shopMessage = `Stage ${selectedStage}を購入してね`;
           messageTimer = 3;
         }
       } else {
         showTitle();
       }
-
       return;
     }
 
     if (mode === "shop") {
-      if (menuIndex === 0) {
-        if (unlockedStages.has(2)) {
-          showStageSelect();
-          return;
-        }
+      const item = getShopItems()[menuIndex];
+      if (!item) return;
 
-        if (gold >= STAGE_COSTS[2]) {
-          gold -= STAGE_COSTS[2];
-          unlockedStages.add(2);
-
-          shopMessage = "STAGE 2 PURCHASED!";
-          messageTimer = 2;
-
-          showStageSelect();
+      if (item.kind === "stage") {
+        const selectedStage = item.target;
+        if (unlockedStages.has(selectedStage)) {
+          startRun(selectedStage);
+        } else if (gold >= STAGE_COSTS[selectedStage]) {
+          gold -= STAGE_COSTS[selectedStage];
+          unlockedStages.add(selectedStage);
+          shopMessage = `STAGE ${selectedStage} UNLOCKED!`;
+          messageTimer = 2.5;
         } else {
-          shopMessage =
-            `GOLDが足りない！ あと${STAGE_COSTS[2] - gold} GOLD必要`;
-
+          shopMessage = `GOLDが足りない！ あと${STAGE_COSTS[selectedStage] - gold} GOLD必要`;
           messageTimer = 3;
         }
-      } else if (menuIndex === 1) {
-        startRun(1);
-      } else {
+      } else if (item.kind === "heal") {
+        const level = item.target === 60 ? 1 : item.target === 45 ? 2 : 3;
+        const currentLevel = healInterval === 0 ? 0 : healInterval === 60 ? 1 : healInterval === 45 ? 2 : 3;
+        const costs = { 60: 10, 45: 20, 30: 30 };
+        if (currentLevel >= level) {
+          shopMessage = "その回復レベルは購入済みだよ";
+          messageTimer = 2;
+        } else if (level !== currentLevel + 1) {
+          shopMessage = "先にひとつ前のレベルを購入してね";
+          messageTimer = 2.5;
+        } else if (gold < costs[item.target]) {
+          shopMessage = `GOLDが足りない！ あと${costs[item.target] - gold} GOLD必要`;
+          messageTimer = 2.5;
+        } else {
+          gold -= costs[item.target];
+          healInterval = item.target;
+          healTimer = 0;
+          shopMessage = `AUTO HEAL LV${level} PURCHASED!`;
+          messageTimer = 2.5;
+        }
+      } else if (item.kind === "speed") {
+        const level = item.target;
+        const cost = level * 15;
+        if (moveSpeedLevel >= level) {
+          shopMessage = "その移動速度レベルは購入済みだよ";
+          messageTimer = 2;
+        } else if (level !== moveSpeedLevel + 1) {
+          shopMessage = "先にひとつ前のレベルを購入してね";
+          messageTimer = 2.5;
+        } else if (gold < cost) {
+          shopMessage = "GOLDが足りない！ あと" + (cost - gold) + " GOLD必要";
+          messageTimer = 2.5;
+        } else {
+          gold -= cost;
+          moveSpeedLevel = level;
+          shopMessage = `MOVE SPEED LV${level} PURCHASED!`;
+          messageTimer = 2.5;
+        }
+      } else if (item.kind === "maxhp") {
+        if (bonusMaxLives) {
+          shopMessage = "HEART CONTAINERは購入済みだよ";
+          messageTimer = 2;
+        } else if (gold < 35) {
+          shopMessage = "GOLDが足りない！ あと" + (35 - gold) + " GOLD必要";
+          messageTimer = 2.5;
+        } else {
+          gold -= 35;
+          bonusMaxLives = 1;
+          shopMessage = "MAX HP +1 PURCHASED!";
+          messageTimer = 2.5;
+        }
+      } else if (item.kind === "slow") {
+        if (bulletSlowUpgrade) {
+          shopMessage = "BULLET GUARDは購入済みだよ";
+          messageTimer = 2;
+        } else if (gold < 80) {
+          shopMessage = "GOLDが足りない！ あと" + (80 - gold) + " GOLD必要";
+          messageTimer = 2.5;
+        } else {
+          gold -= 80;
+          bulletSlowUpgrade = true;
+          shopMessage = "BULLET GUARD PURCHASED!";
+          messageTimer = 2.5;
+        }
+      } else if (item.kind === "back") {
         showTitle();
       }
-
       return;
     }
 
@@ -1851,12 +2018,11 @@
     }
 
     if (mode === "stageSelect") {
-      const startY = H * 0.39;
-      const gap = Math.min(68, H * 0.13);
-
+      const startY = H * 0.26;
+      const gap = Math.min(47, H * 0.096);
       const index = Math.round((y - startY) / gap);
 
-      if (index >= 0 && index < 3) {
+      if (index >= 0 && index < 6) {
         menuIndex = index;
         confirmMenu();
       }
@@ -1865,12 +2031,11 @@
     }
 
     if (mode === "shop") {
-      const startY = H * 0.4;
-      const gap = Math.min(70, H * 0.14);
-
+      const startY = H * 0.19;
+      const gap = Math.min(38, H * 0.071);
       const index = Math.round((y - startY) / gap);
 
-      if (index >= 0 && index < 3) {
+      if (index >= 0 && index < getShopItems().length) {
         menuIndex = index;
         confirmMenu();
       }
