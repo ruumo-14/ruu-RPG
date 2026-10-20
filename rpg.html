@@ -1,125 +1,28 @@
-
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <meta name="theme-color" content="#07111b">
   <title>Ruu RPG - Game</title>
-
   <link rel="stylesheet" href="rpg.css">
 </head>
-
 <body>
-  <main id="rpg-game">
-    <!-- ゲーム画面 -->
-    <header id="game-header">
-      <h1>Ruu RPG</h1>
-      <p id="game-message" role="status" aria-live="polite">
-        冒険の準備をしよう！
-      </p>
-    </header>
-
-    <!-- ステータス -->
-    <section id="status-panel" aria-label="プレイヤーのステータス">
-      <h2>PLAYER STATUS</h2>
-
-      <p>レベル：<span id="player-level">1</span></p>
-
-      <p>
-        HP：
-        <span id="player-hp">100</span>
-        /
-        <span id="player-max-hp">100</span>
-      </p>
-
-      <progress
-        id="player-hp-bar"
-        value="100"
-        max="100"
-        aria-label="プレイヤーのHP"
-      ></progress>
-
-      <p>ゴールド：<span id="player-gold">0</span> G</p>
-
-      <p>経験値：<span id="player-exp">0</span></p>
-    </section>
-
-    <!-- 戦闘エリア -->
-    <section id="battle-panel" aria-label="戦闘">
-      <h2>BATTLE</h2>
-
-      <div id="enemy-area">
-        <div id="enemy-icon" aria-hidden="true">👾</div>
-
-        <h3 id="enemy-name">スライム</h3>
-
-        <p>
-          敵HP：
-          <span id="enemy-hp">30</span>
-          /
-          <span id="enemy-max-hp">30</span>
-        </p>
-
-        <progress
-          id="enemy-hp-bar"
-          value="30"
-          max="30"
-          aria-label="敵のHP"
-        ></progress>
+  <main id="game-shell">
+    <canvas id="game" aria-label="Ruu RPG のゲーム画面"></canvas>
+    <div id="rotate-note">横向き画面がおすすめです</div>
+    <div id="touch-controls" aria-label="タッチ操作">
+      <div id="dpad" aria-label="移動操作">
+        <button data-dir="up" aria-label="上へ">▲</button>
+        <div class="dpad-middle">
+          <button data-dir="left" aria-label="左へ">◀</button>
+          <button data-dir="down" aria-label="下へ">▼</button>
+          <button data-dir="right" aria-label="右へ">▶</button>
+        </div>
       </div>
-
-      <div id="battle-log" role="log" aria-live="polite">
-        <p>敵が現れた！</p>
-      </div>
-
-      <div id="battle-actions">
-        <button id="attack-button" type="button">
-          攻撃
-        </button>
-
-        <button id="heal-button" type="button">
-          回復
-        </button>
-
-        <button id="defend-button" type="button">
-          防御
-        </button>
-      </div>
-    </section>
-
-    <!-- ショップ -->
-    <section id="shop-panel" aria-label="ショップ">
-      <h2>SHOP</h2>
-
-      <p>
-        所持ゴールド：
-        <span id="shop-gold">0</span> G
-      </p>
-
-      <button id="buy-potion-button" type="button">
-        回復アイテムを購入（20 G）
-      </button>
-
-      <p>
-        回復アイテム：
-        <span id="potion-count">0</span> 個
-      </p>
-    </section>
-
-    <!-- ゲームオーバー -->
-    <section id="game-over-screen" hidden>
-      <h2>GAME OVER</h2>
-
-      <p>冒険はここで終わってしまった……</p>
-
-      <button id="restart-button" type="button">
-        もう一度挑戦する
-      </button>
-    </section>
+      <button id="touch-start">START</button>
+    </div>
   </main>
-
-  <!-- ゲームの処理 -->
-  <script src="rpg.js" defer></script>
+  <script src="rpg.js"></script>
 </body>
 </html>
