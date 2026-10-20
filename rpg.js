@@ -68,9 +68,22 @@
     invuln: 0
   };
 
+  // 各ステージの購入価格。報酬と難易度が段階的に上がるよう設定。
   const STAGE_COSTS = {
     1: 0,
-    2: 50
+    2: 50,
+    3: 250,
+    4: 1000,
+    5: 4000
+  };
+
+  // 10秒ごとの基本報酬。従来どおり30秒ごとに2倍になる。
+  const STAGE_REWARDS = {
+    1: 1,
+    2: 3,
+    3: 7,
+    4: 15,
+    5: 50
   };
 
   const clamp = (v, min, max) =>
@@ -116,40 +129,40 @@
   // Enemy positions
   // -------------------------
 
-  // STAGE 1: three enemies.
-  // STAGE 2: one central boss.
+  // 各ステージの敵配置。Stage 1は中央の敵のイラストを3体で共有する。
   function positionEnemies() {
     if (stage === 1) {
       enemies = [
-        {
-          x: W * 0.5,
-          y: H * 0.16,
-          name: "CENTER",
-          type: "stage1-center"
-        },
-        {
-          x: W * 0.19,
-          y: H * 0.29,
-          name: "LEFT",
-          type: "stage1-left"
-        },
-        {
-          x: W * 0.81,
-          y: H * 0.29,
-          name: "RIGHT",
-          type: "stage1-right"
-        }
+        { x: W * 0.5, y: H * 0.16, name: "CENTER", type: "stage1-center" },
+        { x: W * 0.19, y: H * 0.29, name: "LEFT", type: "stage1-center" },
+        { x: W * 0.81, y: H * 0.29, name: "RIGHT", type: "stage1-center" }
       ];
-    } else {
-      enemies = [
-        {
-          x: W * 0.5,
-          y: H * 0.18,
-          name: "BOSS",
-          type: "stage2-boss"
-        }
-      ];
+      return;
     }
+
+    if (stage === 4) {
+      enemies = [
+        { x: W * 0.34, y: H * 0.18, name: "LEFT GUARDIAN", type: "stage4-guardian" },
+        { x: W * 0.66, y: H * 0.18, name: "RIGHT GUARDIAN", type: "stage4-guardian" }
+      ];
+      return;
+    }
+
+    const bossType = {
+      2: "stage2-boss",
+      3: "stage3-oracle",
+      5: "stage5-final"
+    }[stage] || "stage2-boss";
+
+    const bossName = {
+      2: "BOSS",
+      3: "ORACLE",
+      5: "FINAL BOSS"
+    }[stage] || "BOSS";
+
+    enemies = [
+      { x: W * 0.5, y: H * 0.18, name: bossName, type: bossType }
+    ];
   }
 
   // -------------------------
@@ -214,8 +227,8 @@
     shotTimers = [];
     radialTimers = [];
 
-    // STAGE 2の端攻撃は開始直後から少し早めに発生。
-    edgeTimer = stage === 2 ? 2.5 : 5;
+    // Stage 2は端から複数攻撃、Stage 5は終盤の追加バラージ。
+    edgeTimer = stage === 2 ? 1.2 : stage === 5 ? 2.0 : 9999;
     patternTick = 0;
 
     player.lives = 3;
@@ -527,14 +540,11 @@
     }
 
     // =========================
-    // STAGE 2: radial + edge
-    // 中央の敵の攻撃は変更せず、
-    // 画面端の攻撃頻度だけを増加。
+    // STAGE 2: radial + frequent multi-edge bursts
+    // 画面端から2〜3方向の予告を同時に発生させる。
     // =========================
-
     if (stage === 2) {
       radialTimers[0] -= dt;
-
       if (radialTimers[0] <= 0) {
         radialShot(
           enemies[0],
@@ -542,17 +552,86 @@
           155 + Math.min(45, elapsed * 0.6),
           patternTick * 0.16
         );
-
         radialTimers[0] = 2.05;
       }
 
       edgeTimer -= dt;
-
       if (edgeTimer <= 0) {
-        edgeBurst();
+        const burstCount = Math.random() < 0.45 ? 3 : 2;
+        for (let i = 0; i < burstCount; i++) edgeBurst();
+        edgeTimer = rand(1.35, 2.25);
+      }
+    }
 
-        // 変更前の5.5〜8.5秒から、2.2〜4秒に短縮。
-        edgeTimer = rand(2.2, 4.0);
+    // =========================
+    // STAGE 3: rotating cross-ring + aimed cyan fans
+    // 複数方向の輪と、プレイヤーを狙う小さな扇状弾を交互に使う。
+    // =========================
+    if (stage === 3) {
+      const enemy = enemies[0];
+      shotTimers[0] -= dt;
+      if (shotTimers[0] <= 0) {
+        fanShot(enemy, 5, 0.62, 195 + Math.min(30, elapsed * 0.3), C.cyan);
+        aimedShot(enemy, 225, C.blue);
+        shotTimers[0] = Math.max(0.72, 1.45 - elapsed * 0.002);
+      }
+
+      radialTimers[0] -= dt;
+      if (radialTimers[0] <= 0) {
+        radialShot(enemy, 12, 142 + Math.min(25, elapsed * 0.25), patternTick * 0.48, C.cyan);
+        radialShot(enemy, 4, 175, patternTick * 0.48 + Math.PI / 4, C.blue);
+        radialTimers[0] = 3.0;
+      }
+    }
+
+    // =========================
+    // STAGE 4: twin guardians + crossed fans
+    // 左右の守護者が交互に扇状弾を撃ち、周期的に輪を重ねる。
+    // =========================
+    if (stage === 4) {
+      for (let i = 0; i < enemies.length; i++) {
+        const enemy = enemies[i];
+        shotTimers[i] -= dt;
+        if (shotTimers[i] <= 0) {
+          fanShot(enemy, 7, 0.78, 205 + Math.min(35, elapsed * 0.25), i === 0 ? C.orange : C.pink);
+          aimedShot(enemy, 220, C.purple);
+          shotTimers[i] = Math.max(0.72, 1.15 - elapsed * 0.0015) + i * 0.16;
+        }
+
+        radialTimers[i] -= dt;
+        if (radialTimers[i] <= 0) {
+          radialShot(enemy, 10, 148, (i === 0 ? 1 : -1) * patternTick * 0.22, i === 0 ? C.orange : C.pink);
+          fanShot(enemy, 5, 1.25, 178, C.purple);
+          radialTimers[i] = 3.25 + i * 0.45;
+        }
+      }
+    }
+
+    // =========================
+    // STAGE 5: final spiral + heavy edge barrage
+    // 回転する20方向の弾幕、狙い撃ちの扇、端からの追加攻撃。
+    // =========================
+    if (stage === 5) {
+      const enemy = enemies[0];
+      shotTimers[0] -= dt;
+      if (shotTimers[0] <= 0) {
+        fanShot(enemy, 7, 1.02, 230 + Math.min(45, elapsed * 0.25), C.red);
+        aimedShot(enemy, 250, C.orange);
+        shotTimers[0] = Math.max(0.62, 0.95 - elapsed * 0.001);
+      }
+
+      radialTimers[0] -= dt;
+      if (radialTimers[0] <= 0) {
+        radialShot(enemy, 20, 150 + Math.min(35, elapsed * 0.3), patternTick * 0.56, C.purple);
+        radialShot(enemy, 8, 185, -patternTick * 0.38, C.cyan);
+        radialTimers[0] = 2.45;
+      }
+
+      edgeTimer -= dt;
+      if (edgeTimer <= 0) {
+        const burstCount = Math.random() < 0.6 ? 3 : 2;
+        for (let i = 0; i < burstCount; i++) edgeBurst();
+        edgeTimer = rand(2.0, 2.8);
       }
     }
 
@@ -642,7 +721,7 @@
       goldTimer -= 10;
 
       const goldTier = Math.floor(elapsed / 30);
-      const baseReward = stage === 2 ? 3 : 1;
+      const baseReward = STAGE_REWARDS[stage] || 1;
       const reward = baseReward * Math.pow(2, goldTier);
 
       addGold(reward);
@@ -749,6 +828,59 @@
       // Side energy blocks.
       rect(x - 34, y - 1, 4, 7, C.cyan);
       rect(x + 30, y - 1, 4, 7, C.cyan);
+      return;
+    }
+
+    // STAGE 3: cyan oracle with a rotating crystal.
+    if (enemy.type === "stage3-oracle") {
+      rect(x - 19, y - 14, 38, 28, C.cyan);
+      rect(x - 11, y - 22, 22, 8, C.blue);
+      rect(x - 5, y - 29, 10, 7, C.white);
+      rect(x - 12, y - 5, 7, 8, C.bg);
+      rect(x + 5, y - 5, 7, 8, C.bg);
+      rect(x - 9, y - 3, 2, 3, C.white);
+      rect(x + 8, y - 3, 2, 3, C.white);
+      rect(x - 7, y + 8, 14, 4, C.blue);
+      rect(x - 27, y - 1, 7, 5, C.blue);
+      rect(x + 20, y - 1, 7, 5, C.blue);
+      rect(x - 4, y + 14, 8, 7, C.cyan);
+      return;
+    }
+
+    // STAGE 4: twin armored guardians.
+    if (enemy.type === "stage4-guardian") {
+      rect(x - 20, y - 13, 40, 27, C.orange);
+      rect(x - 26, y - 6, 6, 14, C.purple);
+      rect(x + 20, y - 6, 6, 14, C.purple);
+      rect(x - 14, y - 21, 8, 8, C.gold);
+      rect(x + 6, y - 21, 8, 8, C.gold);
+      rect(x - 12, y - 3, 8, 7, C.bg);
+      rect(x + 4, y - 3, 8, 7, C.bg);
+      rect(x - 10, y - 1, 3, 3, C.white);
+      rect(x + 6, y - 1, 3, 3, C.white);
+      rect(x - 8, y + 8, 16, 4, C.bg);
+      rect(x - 15, y + 14, 9, 6, C.orange);
+      rect(x + 6, y + 14, 9, 6, C.orange);
+      return;
+    }
+
+    // STAGE 5: final boss, larger dark core with crimson horns.
+    if (enemy.type === "stage5-final") {
+      rect(x - 29, y - 19, 58, 37, C.purple);
+      rect(x - 22, y - 28, 12, 10, C.red);
+      rect(x + 10, y - 28, 12, 10, C.red);
+      rect(x - 15, y - 34, 8, 9, C.orange);
+      rect(x + 7, y - 34, 8, 9, C.orange);
+      rect(x - 20, y - 11, 12, 10, C.red);
+      rect(x + 8, y - 11, 12, 10, C.red);
+      rect(x - 16, y - 8, 4, 4, C.white);
+      rect(x + 12, y - 8, 4, 4, C.white);
+      rect(x - 12, y + 5, 24, 5, C.bg);
+      rect(x - 18, y + 19, 10, 8, C.purple);
+      rect(x + 8, y + 19, 10, 8, C.purple);
+      rect(x - 5, y + 19, 10, 5, C.cyan);
+      rect(x - 37, y - 1, 7, 10, C.cyan);
+      rect(x + 30, y - 1, 7, 10, C.cyan);
       return;
     }
 
@@ -959,77 +1091,38 @@
   // -------------------------
 
   function drawStageSelect() {
-    text(
-      "SELECT STAGE",
-      W / 2,
-      H * 0.16,
-      27,
-      C.white,
-      "center"
-    );
+    text("SELECT STAGE", W / 2, H * 0.105, 25, C.white, "center");
+    text(`YOUR GOLD: ${gold}`, W / 2, H * 0.17, 15, C.gold, "center");
 
-    text(
-      `YOUR GOLD: ${gold}`,
-      W / 2,
-      H * 0.25,
-      16,
-      C.gold,
-      "center"
-    );
+    const descriptions = {
+      1: "AIMED + RADIAL + FAN",
+      2: "RADIAL + MULTI EDGE BURSTS",
+      3: "ROTATING CROSS RING + CYAN FANS",
+      4: "TWIN GUARDIANS + CROSSED FANS",
+      5: "FINAL SPIRAL + EDGE BARRAGE"
+    };
 
-    const items = [
-      {
-        label: "STAGE 1 - PLAY",
-        detail: "AIMED + THREE ENEMIES",
-        unlocked: unlockedStages.has(1)
-      },
-      {
-        label: unlockedStages.has(2)
-          ? "STAGE 2 - PLAY"
-          : "STAGE 2 - LOCKED",
-        detail: unlockedStages.has(2)
-          ? "RADIAL + EDGE ATTACKS"
-          : `BUY FOR ${STAGE_COSTS[2]} GOLD IN SHOP`,
-        unlocked: unlockedStages.has(2)
-      },
-      {
-        label: "BACK",
-        detail: "RETURN TO TITLE",
-        unlocked: true
-      }
-    ];
+    const items = [];
+    for (let target = 1; target <= 5; target++) {
+      const unlocked = unlockedStages.has(target);
+      items.push({
+        label: target === 1 ? "STAGE 1 - PLAY" : `STAGE ${target} - ${unlocked ? "PLAY" : "LOCKED"}`,
+        detail: unlocked
+          ? `${descriptions[target]} | ${STAGE_REWARDS[target]} GOLD / 10S`
+          : `BUY FOR ${STAGE_COSTS[target]} GOLD IN SHOP`,
+        unlocked
+      });
+    }
+    items.push({ label: "BACK", detail: "RETURN TO TITLE", unlocked: true });
 
-    const startY = H * 0.39;
-    const gap = Math.min(68, H * 0.13);
-
+    const startY = H * 0.26;
+    const gap = Math.min(47, H * 0.096);
     items.forEach((item, i) => {
-      drawButton(
-        item.label,
-        W / 2,
-        startY + i * gap,
-        menuIndex === i,
-        Math.min(W - 36, 380),
-        42
-      );
-
-      text(
-        item.detail,
-        W / 2,
-        startY + i * gap + 25,
-        10,
-        item.unlocked ? C.muted : C.orange,
-        "center"
-      );
+      drawButton(item.label, W / 2, startY + i * gap, menuIndex === i, Math.min(W - 28, 420), 36);
+      text(item.detail, W / 2, startY + i * gap + 20, 9, item.unlocked ? C.muted : C.orange, "center");
     });
 
-    text(
-      "UP / DOWN: SELECT   SPACE: CONFIRM",
-      W / 2,
-      H * 0.9,
-      12,
-      C.muted,
-      "center"
-    );
+    text("UP / DOWN: SELECT   SPACE: CONFIRM", W / 2, H * 0.93, 11, C.muted, "center");
   }
 
   // -------------------------
@@ -1037,85 +1130,36 @@
   // -------------------------
 
   function drawShop() {
-    text("SHOP", W / 2, H * 0.13, 30, C.gold, "center");
+    text("SHOP", W / 2, H * 0.105, 27, C.gold, "center");
+    text(`YOUR GOLD: ${gold}`, W / 2, H * 0.18, 15, C.white, "center");
 
-    text(
-      `YOUR GOLD: ${gold}`,
-      W / 2,
-      H * 0.22,
-      17,
-      C.white,
-      "center"
-    );
+    const items = [];
+    for (let target = 2; target <= 5; target++) {
+      const owned = unlockedStages.has(target);
+      items.push({
+        stage: target,
+        label: owned ? `PLAY STAGE ${target}` : `UNLOCK STAGE ${target}`,
+        detail: owned
+          ? `OWNED - ${STAGE_REWARDS[target]} GOLD / 10S`
+          : `COST: ${STAGE_COSTS[target]} GOLD | REWARD: ${STAGE_REWARDS[target]} / 10S`
+      });
+    }
+    items.push({ stage: 1, label: "PLAY STAGE 1", detail: "FREE - 1 GOLD / 10S" });
+    items.push({ stage: 0, label: "BACK TO TITLE", detail: "RETURN TO MAIN MENU" });
 
-    const items = [
-      {
-        label: "BUY / PLAY STAGE 2",
-        detail: unlockedStages.has(2)
-          ? "ALREADY OWNED - FREE TO PLAY"
-          : `COST: ${STAGE_COSTS[2]} GOLD`
-      },
-      {
-        label: "PLAY STAGE 1",
-        detail: "FREE"
-      },
-      {
-        label: "BACK TO TITLE",
-        detail: "RETURN TO MAIN MENU"
-      }
-    ];
-
-    const startY = H * 0.4;
-    const gap = Math.min(70, H * 0.14);
-
+    const startY = H * 0.29;
+    const gap = Math.min(50, H * 0.094);
     items.forEach((item, i) => {
-      drawButton(
-        item.label,
-        W / 2,
-        startY + i * gap,
-        menuIndex === i,
-        Math.min(W - 30, 390),
-        44
-      );
-
-      text(
-        item.detail,
-        W / 2,
-        startY + i * gap + 25,
-        11,
-        C.muted,
-        "center"
-      );
+      drawButton(item.label, W / 2, startY + i * gap, menuIndex === i, Math.min(W - 24, 420), 37);
+      text(item.detail, W / 2, startY + i * gap + 20, 9, C.muted, "center");
     });
 
     if (messageTimer > 0 && shopMessage) {
-      text(
-        shopMessage,
-        W / 2,
-        H * 0.88,
-        12,
-        C.orange,
-        "center"
-      );
+      text(shopMessage, W / 2, H * 0.87, 11, C.orange, "center");
     }
 
-    text(
-      "UP / DOWN: SELECT   SPACE: CONFIRM",
-      W / 2,
-      H * 0.95,
-      11,
-      C.muted,
-      "center"
-    );
-
-    text(
-      "ADMIN: CTRL + SHIFT + 5",
-      W / 2,
-      H * 0.99 - 2,
-      9,
-      C.muted,
-      "center"
-    );
+    text("UP / DOWN: SELECT   SPACE: CONFIRM", W / 2, H * 0.945, 10, C.muted, "center");
+    text("ADMIN: CTRL + SHIFT + 5", W / 2, H * 0.985, 9, C.muted, "center");
   }
 
   // -------------------------
@@ -1473,8 +1517,8 @@
 
   function menuLength() {
     if (mode === "title") return 2;
-    if (mode === "stageSelect") return 3;
-    if (mode === "shop") return 3;
+    if (mode === "stageSelect") return 6;
+    if (mode === "shop") return 6;
     if (mode === "pause") return 2;
     if (mode === "gameover") return 2;
     if (mode === "adminPanel") return 4;
@@ -1501,51 +1545,41 @@
     }
 
     if (mode === "stageSelect") {
-      if (menuIndex === 0) {
-        startRun(1);
-      } else if (menuIndex === 1) {
-        if (unlockedStages.has(2)) {
-          startRun(2);
+      if (menuIndex >= 0 && menuIndex <= 4) {
+        const selectedStage = menuIndex + 1;
+        if (unlockedStages.has(selectedStage)) {
+          startRun(selectedStage);
         } else {
           openShop();
-          menuIndex = 0;
-          shopMessage = "Stage 2を購入してね";
+          menuIndex = selectedStage - 2;
+          shopMessage = `Stage ${selectedStage}を購入してね`;
           messageTimer = 3;
         }
       } else {
         showTitle();
       }
-
       return;
     }
 
     if (mode === "shop") {
-      if (menuIndex === 0) {
-        if (unlockedStages.has(2)) {
-          showStageSelect();
-          return;
-        }
-
-        if (gold >= STAGE_COSTS[2]) {
-          gold -= STAGE_COSTS[2];
-          unlockedStages.add(2);
-
-          shopMessage = "STAGE 2 PURCHASED!";
-          messageTimer = 2;
-
-          showStageSelect();
+      if (menuIndex >= 0 && menuIndex <= 3) {
+        const selectedStage = menuIndex + 2;
+        if (unlockedStages.has(selectedStage)) {
+          startRun(selectedStage);
+        } else if (gold >= STAGE_COSTS[selectedStage]) {
+          gold -= STAGE_COSTS[selectedStage];
+          unlockedStages.add(selectedStage);
+          shopMessage = `STAGE ${selectedStage} UNLOCKED!`;
+          messageTimer = 2.5;
         } else {
-          shopMessage =
-            `GOLDが足りない！ あと${STAGE_COSTS[2] - gold} GOLD必要`;
-
+          shopMessage = `GOLDが足りない！ あと${STAGE_COSTS[selectedStage] - gold} GOLD必要`;
           messageTimer = 3;
         }
-      } else if (menuIndex === 1) {
+      } else if (menuIndex === 4) {
         startRun(1);
       } else {
         showTitle();
       }
-
       return;
     }
 
@@ -1851,12 +1885,11 @@
     }
 
     if (mode === "stageSelect") {
-      const startY = H * 0.39;
-      const gap = Math.min(68, H * 0.13);
-
+      const startY = H * 0.26;
+      const gap = Math.min(47, H * 0.096);
       const index = Math.round((y - startY) / gap);
 
-      if (index >= 0 && index < 3) {
+      if (index >= 0 && index < 6) {
         menuIndex = index;
         confirmMenu();
       }
@@ -1865,12 +1898,11 @@
     }
 
     if (mode === "shop") {
-      const startY = H * 0.4;
-      const gap = Math.min(70, H * 0.14);
-
+      const startY = H * 0.29;
+      const gap = Math.min(50, H * 0.094);
       const index = Math.round((y - startY) / gap);
 
-      if (index >= 0 && index < 3) {
+      if (index >= 0 && index < 6) {
         menuIndex = index;
         confirmMenu();
       }
