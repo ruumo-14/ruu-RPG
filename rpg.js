@@ -62,7 +62,7 @@
   let shotTimers = [];
   let radialTimers = [];
 
-  let edgeTimer = 6;
+  let edgeTimer = 0.25; // Stage 2開始直後から画面端攻撃を始める
   let patternTick = 0;
 
   const player = {
