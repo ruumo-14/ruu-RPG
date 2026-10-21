@@ -15,6 +15,7 @@
   let stage = 1;
   let gold = 0, runGold = 0, elapsed = 0;
   let goldTimer = 0, edgeTimer = 2, patternTick = 0;
+  let bulletSpeedMultiplier = 1;
   let stage4SwitchTimer = 0, stage4RainTimer = 0, stage4Direction = 0;
   let stage5WaveTimer = 0, stage5SafeY = 0, stage6Angle = 0, stage6BurstTimer = 0;
   let hitFlash = 0, healTimer = 0, guardTimer = 0;
@@ -53,13 +54,22 @@
     lives: 3, maxLives: 3, invuln: 0
   };
 
-  const upgrades = { speed: 0, hearts: 0, bulletSlow: 0, goldBonus: 0 };
+const upgrades = {
+  speed: 0,
+  hearts: 0,
+  bulletSlow: 0,
+  goldBonus: 0,
+  guard: 0,
+  regen: 0
+};
 
   const UPGRADE_COSTS = {
     speed: [35, 55, 80, 110],
     hearts: [45, 75, 110],
     bulletSlow: [65, 95, 130, 170],
-    goldBonus: [80, 120, 170, 230]
+    goldBonus: [80, 120, 170, 230],
+    guard: [70, 105, 150],
+    regen: [100, 150, 220]
   };
 
   const STAGES = [
@@ -296,11 +306,13 @@
             gold: 0,
             unlockedStages: [1],
             upgrades: {
-              speed: 0,
-              hearts: 0,
-              bulletSlow: 0,
-              goldBonus: 0
-            }
+ 　　　　　　 speed: 0,
+  　　　　　　hearts: 0,
+ 　　　　　　 bulletSlow: 0,
+ 　　　　　　 goldBonus: 0,
+  　　　　　　guard: 0,
+  　　　　　　regen: 0
+　　　　　　　}
           };
 
           saveAccounts(accounts);
@@ -350,6 +362,8 @@
       hearts: Number(old.hearts) || 0,
       bulletSlow: Number(old.bulletSlow) || 0,
       goldBonus: Number(old.goldBonus) || 0
+      guard: Number(old.guard) || 0,
+      regen: Number(old.regen) || 0
     });
   }
 
@@ -409,15 +423,22 @@
     messageTimer = 2.5;
   }
 
-  function addGold(amount) {
-    amount = Math.max(
-      1,
-      Math.round(amount * (1 + upgrades.goldBonus * 0.25))
-    );
-    gold += amount;
-    runGold += amount;
-    saveUserProgress();
-  }
+function addGold(amount) {
+  const goldTier = Math.floor(elapsed / 30);
+
+  amount = Math.max(
+    1,
+    Math.round(
+      amount *
+      (1 + upgrades.goldBonus * 0.25) *
+      Math.pow(2, goldTier)
+    )
+  );
+
+  gold += amount;
+  runGold += amount;
+  saveUserProgress();
+}
 
   function positionEnemies() {
     if (stage === 1) {
@@ -467,6 +488,7 @@
     stage = s;
     elapsed = 0;
     goldTimer = 0;
+    bulletSpeedMultiplier = 1;
     runGold = 0;
     hitFlash = 0;
     healTimer = 0;
@@ -604,8 +626,11 @@
 
     if (mode !== "playing") return;
 
-    elapsed += dt;
-    patternTick += dt;
+elapsed += dt;
+patternTick += dt;
+
+const speedTier = Math.floor(elapsed / 30);
+bulletSpeedMultiplier = Math.pow(2, speedTier);
 
     player.invuln = Math.max(0, player.invuln - dt);
     hitFlash = Math.max(0, hitFlash - dt);
@@ -941,8 +966,8 @@
     edgeWarnings = edgeWarnings.filter(w => w.life > -0.6);
 
     for (const bullet of bullets) {
-      bullet.x += bullet.vx * dt;
-      bullet.y += bullet.vy * dt;
+      bullet.x += bullet.vx * bulletSpeedMultiplier * dt;
+      bullet.y += bullet.vy * bulletSpeedMultiplier * dt;
 
       if (bullet.waveSide === "top" && bullet.y >= bullet.waveStopY) {
         bullet.y = bullet.waveStopY;
@@ -971,7 +996,7 @@
       ) {
         bullet.dead = true;
         player.lives--;
-        player.invuln = 1.15;
+        player.invuln = 1.15 + upgrades.guard * 0.35;
         hitFlash = 0.2;
 
         for (let i = 0; i < 8; i++) {
@@ -1012,7 +1037,7 @@
 
       if (Math.hypot(player.x - px, player.y - py) < player.r + 7) {
         player.lives--;
-        player.invuln = 1.15;
+        player.invuln = 1.15 + upgrades.guard * 0.35;
         hitFlash = 0.2;
 
         if (player.lives <= 0) {
@@ -1038,6 +1063,25 @@
 
     particles = particles.filter(p => p.life > 0);
 
+    if (upgrades.regen > 0 && player.lives < player.maxLives) {
+  healTimer += dt;
+
+  const healInterval = Math.max(
+    8,
+    30 - upgrades.regen * 6
+  );
+
+  if (healTimer >= healInterval) {
+    player.lives = Math.min(
+      player.maxLives,
+      player.lives + 1
+    );
+
+    healTimer = 0;
+  }
+} else {
+  healTimer = 0;
+}
     goldTimer += dt;
 
     while (goldTimer >= 10) {
@@ -1228,12 +1272,37 @@
       name: "GOLD BONUS",
       desc: level => `獲得GOLD +${level * 25}%`,
       color: C.gold
-    }
+    },
+    {
+  id: "guard",
+  name: "LONG GUARD",
+  desc: level => `無敵時間 +${(level * 0.35).toFixed(2)}秒`,
+  color: C.purple
+},
+{
+  id: "regen",
+  name: "AUTO HEAL",
+  desc: level =>
+    level === 0
+      ? "購入すると自動回復"
+      : `${Math.max(8, 30 - level * 6)}秒ごとにHP回復`,
+  color: C.green
+}
   ];
 
   function drawShop() {
-    text("SHOP", W / 2, 24, 25, C.gold, "center");
-    text(`GOLD: ${gold}`, W - 16, 24, 13, C.gold, "right");
+text(item.name, textX, y + 13, 11, C.white);
+text(`Lv. ${level}/${costs.length}`, textX, y + 28, 10, C.muted);
+
+text(
+  maxed ? "MAX" : `${cost} GOLD`,
+  textX,
+  y + 42,
+  10,
+  maxed ? C.green : C.gold
+);
+
+text(item.desc(level), textX, y + 55, 8, C.muted);
 
     const margin = 12;
     const top = 54;
