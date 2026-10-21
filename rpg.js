@@ -361,7 +361,7 @@ const upgrades = {
       speed: Number(old.speed) || 0,
       hearts: Number(old.hearts) || 0,
       bulletSlow: Number(old.bulletSlow) || 0,
-      goldBonus: Number(old.goldBonus) || 0
+      goldBonus: Number(old.goldBonus) || 0,
       guard: Number(old.guard) || 0,
       regen: Number(old.regen) || 0
     });
@@ -1291,18 +1291,6 @@ bulletSpeedMultiplier = Math.pow(2, speedTier);
   ];
 
   function drawShop() {
-text(item.name, textX, y + 13, 11, C.white);
-text(`Lv. ${level}/${costs.length}`, textX, y + 28, 10, C.muted);
-
-text(
-  maxed ? "MAX" : `${cost} GOLD`,
-  textX,
-  y + 42,
-  10,
-  maxed ? C.green : C.gold
-);
-
-text(item.desc(level), textX, y + 55, 8, C.muted);
 
     const margin = 12;
     const top = 54;
