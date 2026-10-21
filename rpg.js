@@ -88,16 +88,52 @@
   let currentUser = null;
   let authRoot = null;
 
+  const AUTH_BACKUP_KEY = "ruuRpgAccountsBackupV1";
+
   function readAccounts() {
+    const isValidAccounts = value =>
+      value &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      Object.keys(value).length > 0;
+
     try {
-      return JSON.parse(localStorage.getItem(AUTH_KEY) || "{}");
-    } catch {
+      const primary = JSON.parse(
+        localStorage.getItem(AUTH_KEY) || "{}"
+      );
+
+      if (isValidAccounts(primary)) {
+        return primary;
+      }
+
+      const backup = JSON.parse(
+        localStorage.getItem(AUTH_BACKUP_KEY) || "{}"
+      );
+
+      if (isValidAccounts(backup)) {
+        localStorage.setItem(AUTH_KEY, JSON.stringify(backup));
+        return backup;
+      }
+
       return {};
+    } catch {
+      try {
+        const backup = JSON.parse(
+          localStorage.getItem(AUTH_BACKUP_KEY) || "{}"
+        );
+
+        return isValidAccounts(backup) ? backup : {};
+      } catch {
+        return {};
+      }
     }
   }
 
   function saveAccounts(accounts) {
-    localStorage.setItem(AUTH_KEY, JSON.stringify(accounts));
+    const data = JSON.stringify(accounts);
+
+    localStorage.setItem(AUTH_KEY, data);
+    localStorage.setItem(AUTH_BACKUP_KEY, data);
   }
 
   async function hashPassword(password) {
@@ -384,19 +420,39 @@
   }
 
   function positionEnemies() {
-    if (stage === 1 || stage === 3) {
+    if (stage === 1) {
       enemies = [
         { x: W * 0.5, y: H * 0.16 },
         { x: W * 0.19, y: H * 0.29 },
         { x: W * 0.81, y: H * 0.29 }
       ];
+    } else if (stage === 2) {
+      enemies = [
+        { x: W * 0.5, y: H * 0.18 },
+        { x: W * 0.13, y: H * 0.32 },
+        { x: W * 0.87, y: H * 0.32 }
+      ];
+    } else if (stage === 3) {
+      enemies = [
+        { x: W * 0.25, y: H * 0.16 },
+        { x: W * 0.5, y: H * 0.16 },
+        { x: W * 0.75, y: H * 0.16 },
+        { x: W * 0.25, y: H * 0.34 },
+        { x: W * 0.5, y: H * 0.34 },
+        { x: W * 0.75, y: H * 0.34 }
+      ];
     } else if (stage === 6) {
-      enemies = [{ x: W * 0.5, y: H * 0.5 }];
+      enemies = [
+        { x: W * 0.5, y: H * 0.5 },
+        { x: 24, y: 24 },
+        { x: W - 24, y: 24 },
+        { x: 24, y: H - 24 },
+        { x: W - 24, y: H - 24 }
+      ];
     } else {
       enemies = [{ x: W * 0.5, y: H * 0.18 }];
     }
   }
-
   // ============================================================
   // ステージ開始
   // ============================================================
@@ -635,6 +691,27 @@
         }
       }
 
+      // 左右の敵がプレイヤーを狙って弾を撃つ
+      for (let i = 1; i <= 2; i++) {
+        shotTimers[i] -= dt;
+
+        if (shotTimers[i] <= 0) {
+          aimedShot(
+            enemies[i],
+            210 + Math.min(90, elapsed * 1.2),
+            i === 1 ? C.orange : C.pink
+          );
+
+          // 時間が経つほど発射間隔を短くする
+          shotTimers[i] = Math.max(0.42, 1.05 - elapsed * 0.006);
+        }
+
+        // ときどき狙い撃ちを2連射する
+        if (Math.random() < dt * 0.18) {
+          fanShot(enemies[i], 3, 0.32, 175, C.orange);
+        }
+      }
+
       edgeTimer -= dt;
 
       if (edgeTimer <= 0) {
@@ -642,7 +719,7 @@
         edgeTimer = rand(1.1, 1.8);
       }
     }
-
+    
     // ステージ3：左右にも敵を配置し、3体が渦巻き状に弾を放つ
     if (stage === 3) {
       for (let i = 0; i < enemies.length; i++) {
@@ -716,27 +793,63 @@
     }
 
     // ステージ5：上下から波状の弾幕。安全帯が上下に移動する
+    // ステージ5：安全地帯が動く左右横断弾幕＋ボスの狙い撃ち
     if (stage === 5) {
       stage5WaveTimer -= dt;
 
       if (stage5WaveTimer <= 0) {
-        stage5SafeY = rand(H * 0.2, H * 0.8);
-        const spacing = 24;
+        // 安全地帯の位置を毎回変える
+        stage5SafeY = rand(H * 0.18, H * 0.82);
 
-        for (let x = 12; x < W - 8; x += spacing) {
-          const topBullet = {
-            x,
-            y: -5,
-            vx: rand(-8, 8),
-            vy: 185,
+        // 安全地帯以外を左右から弾が横切る
+        const spacing = 30;
+
+        for (let y = 55; y < H - 25; y += spacing) {
+          if (Math.abs(y - stage5SafeY) < 52) continue;
+
+          const speed = 190 + Math.min(100, elapsed * 1.5);
+
+          bullets.push({
+            x: -8,
+            y,
+            vx: speed,
+            vy: rand(-12, 12),
             r: 5,
             color: C.pink,
-            dead: false,
-            waveStopY: stage5SafeY - 55,
-            waveSide: "top",
-            waveLife: 1.45
-          };
+            dead: false
+          });
 
+          bullets.push({
+            x: W + 8,
+            y: clamp(y + rand(-8, 8), 45, H - 12),
+            vx: -speed,
+            vy: rand(-12, 12),
+            r: 5,
+            color: C.orange,
+            dead: false
+          });
+        }
+
+        // 発射間隔を徐々に短くする
+        stage5WaveTimer = Math.max(
+          0.42,
+          rand(0.95, 1.3) - elapsed * 0.004
+        );
+      }
+
+      // 中央の敵もプレイヤーを狙って攻撃
+      shotTimers[0] -= dt;
+
+      if (shotTimers[0] <= 0) {
+        aimedShot(
+          enemies[0],
+          190 + Math.min(100, elapsed * 1.5),
+          C.purple
+        );
+
+        shotTimers[0] = Math.max(0.38, 0.95 - elapsed * 0.004);
+      }
+    }
           const bottomBullet = {
             x: W - x,
             y: H + 5,
@@ -757,14 +870,43 @@
       }
     }
 
-    // ステージ6：画面の対角より長い回転バー＋全方位攻撃
+    // ステージ6：30秒ごとに加速する回転バー＋四隅の狙い撃ち
     if (stage === 6) {
-      stage6Angle += dt * 1.15;
+      // 30秒経過するごとに回転速度を上げる
+      const speedLevel = Math.floor(elapsed / 30);
+      const rotationSpeed = 1.15 + speedLevel * 0.35;
+
+      stage6Angle += dt * rotationSpeed;
+
+      // 中央から全方位に弾を発射
       stage6BurstTimer -= dt;
 
       if (stage6BurstTimer <= 0) {
-        radialShot(enemies[0], 24, 175, patternTick * 0.13, C.blue);
-        stage6BurstTimer = rand(3.2, 4.5);
+        radialShot(
+          enemies[0],
+          24 + Math.min(16, speedLevel * 2),
+          175 + speedLevel * 12,
+          patternTick * 0.13,
+          C.blue
+        );
+
+        stage6BurstTimer = Math.max(1.4, rand(3.2, 4.5) - speedLevel * 0.15);
+      }
+
+      // 四隅の敵がプレイヤーを狙い撃ちする
+      for (let i = 1; i <= 4; i++) {
+        shotTimers[i] -= dt;
+
+        if (shotTimers[i] <= 0) {
+          aimedShot(
+            enemies[i],
+            185 + Math.min(100, elapsed * 1.4),
+            i % 2 === 0 ? C.orange : C.pink
+          );
+
+          // 時間経過で連射間隔も短くなる
+          shotTimers[i] = Math.max(0.38, 1.15 - elapsed * 0.006);
+        }
       }
     }
 
@@ -1049,11 +1191,6 @@
     drawButton(
       "ショップ", W / 2, H * 0.59,
       menuIndex === 1, Math.min(W - 40, 300), 38
-    );
-
-    drawButton(
-      "管理者機能", W / 2, H * 0.68,
-      menuIndex === 2, Math.min(W - 40, 260), 36
     );
 
     drawButton(
@@ -1445,7 +1582,6 @@
     if (s) buyStage(s.id);
   }
 
-  function confirmMenu() {
     if (mode === "title") {
       if (menuIndex === 0) {
         mode = "stageSelect";
@@ -1455,11 +1591,6 @@
         mode = "shop";
         menuIndex = 0;
         shopScroll = 0;
-      } else if (menuIndex === 2) {
-        mode = "adminCode";
-        adminInput = "";
-        shopMessage = "";
-        messageTimer = 0;
       } else {
         logout();
       }
@@ -1520,7 +1651,7 @@
 
   function moveMenu(direction) {
     if (mode === "title") {
-      menuIndex = clamp(menuIndex + direction, 0, 3);
+      menuIndex = clamp(menuIndex + direction, 0, 2);
     } else if (mode === "stageSelect") {
       menuIndex = clamp(menuIndex + direction, 0, STAGES.length - 1);
 
@@ -1710,10 +1841,8 @@
         menuIndex = 0;
       } else if (y >= H * 0.54 && y < H * 0.64) {
         menuIndex = 1;
-      } else if (y >= H * 0.64 && y < H * 0.73) {
+      } else if (y >= H * 0.64 && y < H * 0.75) {
         menuIndex = 2;
-      } else if (y >= H * 0.73 && y < H * 0.84) {
-        menuIndex = 3;
       } else {
         return;
       }
