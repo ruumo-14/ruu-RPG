@@ -792,16 +792,12 @@
       }
     }
 
-    // ステージ5：上下から波状の弾幕。安全帯が上下に移動する
     // ステージ5：安全地帯が動く左右横断弾幕＋ボスの狙い撃ち
     if (stage === 5) {
       stage5WaveTimer -= dt;
 
       if (stage5WaveTimer <= 0) {
-        // 安全地帯の位置を毎回変える
         stage5SafeY = rand(H * 0.18, H * 0.82);
-
-        // 安全地帯以外を左右から弾が横切る
         const spacing = 30;
 
         for (let y = 55; y < H - 25; y += spacing) {
@@ -830,14 +826,12 @@
           });
         }
 
-        // 発射間隔を徐々に短くする
         stage5WaveTimer = Math.max(
           0.42,
           rand(0.95, 1.3) - elapsed * 0.004
         );
       }
 
-      // 中央の敵もプレイヤーを狙って攻撃
       shotTimers[0] -= dt;
 
       if (shotTimers[0] <= 0) {
@@ -848,25 +842,6 @@
         );
 
         shotTimers[0] = Math.max(0.38, 0.95 - elapsed * 0.004);
-      }
-    }
-          const bottomBullet = {
-            x: W - x,
-            y: H + 5,
-            vx: rand(-8, 8),
-            vy: -185,
-            r: 5,
-            color: C.pink,
-            dead: false,
-            waveStopY: stage5SafeY + 55,
-            waveSide: "bottom",
-            waveLife: 1.45
-          };
-
-          bullets.push(topBullet, bottomBullet);
-        }
-
-        stage5WaveTimer = rand(0.85, 1.2);
       }
     }
 
@@ -1582,6 +1557,7 @@
     if (s) buyStage(s.id);
   }
 
+　function confirmMenu() {
     if (mode === "title") {
       if (menuIndex === 0) {
         mode = "stageSelect";
