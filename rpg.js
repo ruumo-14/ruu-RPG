@@ -54,14 +54,14 @@
     lives: 3, maxLives: 3, invuln: 0
   };
 
-const upgrades = {
-  speed: 0,
-  hearts: 0,
-  bulletSlow: 0,
-  goldBonus: 0,
-  guard: 0,
-  regen: 0
-};
+  const upgrades = {
+    speed: 0,
+    hearts: 0,
+    bulletSlow: 0,
+    goldBonus: 0,
+    guard: 0,
+    regen: 0
+  };
 
   const UPGRADE_COSTS = {
     speed: [35, 55, 80, 110],
@@ -306,13 +306,13 @@ const upgrades = {
             gold: 0,
             unlockedStages: [1],
             upgrades: {
- 　　　　　　 speed: 0,
-  　　　　　　hearts: 0,
- 　　　　　　 bulletSlow: 0,
- 　　　　　　 goldBonus: 0,
-  　　　　　　guard: 0,
-  　　　　　　regen: 0
-　　　　　　　}
+              speed: 0,
+              hearts: 0,
+              bulletSlow: 0,
+              goldBonus: 0,
+              guard: 0,
+              regen: 0
+            }
           };
 
           saveAccounts(accounts);
@@ -423,22 +423,22 @@ const upgrades = {
     messageTimer = 2.5;
   }
 
-function addGold(amount) {
-  const goldTier = Math.floor(elapsed / 30);
+  function addGold(amount) {
+    const goldTier = Math.floor(elapsed / 30);
 
-  amount = Math.max(
-    1,
-    Math.round(
-      amount *
-      (1 + upgrades.goldBonus * 0.25) *
-      Math.pow(2, goldTier)
-    )
-  );
+    amount = Math.max(
+      1,
+      Math.round(
+        amount *
+        (1 + upgrades.goldBonus * 0.25) *
+        Math.pow(2, goldTier)
+      )
+    );
 
-  gold += amount;
-  runGold += amount;
-  saveUserProgress();
-}
+    gold += amount;
+    runGold += amount;
+    saveUserProgress();
+  }
 
   function positionEnemies() {
     if (stage === 1) {
@@ -474,6 +474,7 @@ function addGold(amount) {
       enemies = [{ x: W * 0.5, y: H * 0.18 }];
     }
   }
+
   // ============================================================
   // ステージ開始
   // ============================================================
@@ -526,8 +527,12 @@ function addGold(amount) {
   // ============================================================
 
   function fire(x, y, angle, speed, color = C.pink, radius = 4) {
+    // 発射時点の倍率を速度に適用する。
+    // これにより、すでに飛んでいる弾は後から加速しない。
     const adjustedSpeed =
-      speed * Math.max(0.68, 1 - upgrades.bulletSlow * 0.08);
+      speed *
+      Math.max(0.68, 1 - upgrades.bulletSlow * 0.08) *
+      bulletSpeedMultiplier;
 
     bullets.push({
       x, y,
@@ -626,11 +631,13 @@ function addGold(amount) {
 
     if (mode !== "playing") return;
 
-elapsed += dt;
-patternTick += dt;
+    elapsed += dt;
+    patternTick += dt;
 
-const speedTier = Math.floor(elapsed / 30);
-bulletSpeedMultiplier = Math.pow(2, speedTier);
+    // 30秒ごとに弾速倍率を1.5倍にする。
+    // 倍率は新しく発射される弾にだけ適用される。
+    const speedTier = Math.floor(elapsed / 30);
+    bulletSpeedMultiplier = Math.pow(1.5, speedTier);
 
     player.invuln = Math.max(0, player.invuln - dt);
     hitFlash = Math.max(0, hitFlash - dt);
@@ -744,7 +751,7 @@ bulletSpeedMultiplier = Math.pow(2, speedTier);
         edgeTimer = rand(1.1, 1.8);
       }
     }
-    
+
     // ステージ3：左右にも敵を配置し、3体が渦巻き状に弾を放つ
     if (stage === 3) {
       for (let i = 0; i < enemies.length; i++) {
@@ -828,13 +835,15 @@ bulletSpeedMultiplier = Math.pow(2, speedTier);
         for (let y = 55; y < H - 25; y += spacing) {
           if (Math.abs(y - stage5SafeY) < 52) continue;
 
-          const speed = 190 + Math.min(100, elapsed * 1.5);
+          const speed =
+            (190 + Math.min(100, elapsed * 1.5)) *
+            bulletSpeedMultiplier;
 
           bullets.push({
             x: -8,
             y,
             vx: speed,
-            vy: rand(-12, 12),
+            vy: rand(-12, 12) * bulletSpeedMultiplier,
             r: 5,
             color: C.pink,
             dead: false
@@ -844,7 +853,7 @@ bulletSpeedMultiplier = Math.pow(2, speedTier);
             x: W + 8,
             y: clamp(y + rand(-8, 8), 45, H - 12),
             vx: -speed,
-            vy: rand(-12, 12),
+            vy: rand(-12, 12) * bulletSpeedMultiplier,
             r: 5,
             color: C.orange,
             dead: false
@@ -966,8 +975,9 @@ bulletSpeedMultiplier = Math.pow(2, speedTier);
     edgeWarnings = edgeWarnings.filter(w => w.life > -0.6);
 
     for (const bullet of bullets) {
-      bullet.x += bullet.vx * bulletSpeedMultiplier * dt;
-      bullet.y += bullet.vy * bulletSpeedMultiplier * dt;
+      // 発射時に速度倍率を適用済みなので、移動中は倍率を掛けない。
+      bullet.x += bullet.vx * dt;
+      bullet.y += bullet.vy * dt;
 
       if (bullet.waveSide === "top" && bullet.y >= bullet.waveStopY) {
         bullet.y = bullet.waveStopY;
@@ -1063,25 +1073,25 @@ bulletSpeedMultiplier = Math.pow(2, speedTier);
 
     particles = particles.filter(p => p.life > 0);
 
+    // AUTO HEAL：Lv.1は60秒、Lv.2は45秒、Lv.3は30秒ごとに回復
     if (upgrades.regen > 0 && player.lives < player.maxLives) {
-  healTimer += dt;
+      healTimer += dt;
 
-  const healInterval = Math.max(
-    8,
-    30 - upgrades.regen * 6
-  );
+      const regenIntervals = [0, 60, 45, 30];
+      const healInterval = regenIntervals[upgrades.regen];
 
-  if (healTimer >= healInterval) {
-    player.lives = Math.min(
-      player.maxLives,
-      player.lives + 1
-    );
+      if (healTimer >= healInterval) {
+        player.lives = Math.min(
+          player.maxLives,
+          player.lives + 1
+        );
 
-    healTimer = 0;
-  }
-} else {
-  healTimer = 0;
-}
+        healTimer = 0;
+      }
+    } else {
+      healTimer = 0;
+    }
+
     goldTimer += dt;
 
     while (goldTimer >= 10) {
@@ -1274,24 +1284,25 @@ bulletSpeedMultiplier = Math.pow(2, speedTier);
       color: C.gold
     },
     {
-  id: "guard",
-  name: "LONG GUARD",
-  desc: level => `無敵時間 +${(level * 0.35).toFixed(2)}秒`,
-  color: C.purple
-},
-{
-  id: "regen",
-  name: "AUTO HEAL",
-  desc: level =>
-    level === 0
-      ? "購入すると自動回復"
-      : `${Math.max(8, 30 - level * 6)}秒ごとにHP回復`,
-  color: C.green
-}
+      id: "guard",
+      name: "LONG GUARD",
+      desc: level => `無敵時間 +${(level * 0.35).toFixed(2)}秒`,
+      color: C.purple
+    },
+    {
+      id: "regen",
+      name: "AUTO HEAL",
+      desc: level => {
+        const intervals = [0, 60, 45, 30];
+        return level === 0
+          ? "購入すると自動回復"
+          : `${intervals[level]}秒ごとにHP回復`;
+      },
+      color: C.green
+    }
   ];
 
   function drawShop() {
-
     const margin = 12;
     const top = 54;
     const bottom = H - 55;
@@ -1614,7 +1625,7 @@ bulletSpeedMultiplier = Math.pow(2, speedTier);
     if (s) buyStage(s.id);
   }
 
-　function confirmMenu() {
+  function confirmMenu() {
     if (mode === "title") {
       if (menuIndex === 0) {
         mode = "stageSelect";
