@@ -1,31 +1,12 @@
-
 (() => {
   "use strict";
 
   const canvas = document.getElementById("game");
-  if (!canvas) {
-    console.error('canvas id="game" が見つかりません。');
-    return;
-  }
-
   const ctx = canvas.getContext("2d", { alpha: false });
-
-  let W = 960, H = 540, dpr = 1;
-  let lastTime = 0;
-  let mode = "title";
-  let stage = 1;
-  let gold = 0, runGold = 0, elapsed = 0;
-  let goldTimer = 0, edgeTimer = 2, patternTick = 0;
-  let hitFlash = 0, healTimer = 0, guardTimer = 0;
-  let menuIndex = 0;
-  let shopMessage = "", messageTimer = 0;
-  let shopScroll = 0;
-  let adminInput = "";
-  const ADMIN_CODE = "O0p-@^";
+  const touchStart = document.getElementById("touch-start");
 
   const C = {
     bg: "#07111b",
-    panel: "#101f30",
     line: "#26384b",
     white: "#e8edf4",
     muted: "#9eafc1",
@@ -35,11 +16,31 @@
     gold: "#ffd166",
     blue: "#75c9ff",
     green: "#78e0ae",
-    purple: "#a78bfa"
+    panel: "#101f30"
   };
+
+  let W = 960, H = 540, dpr = 1, lastTime = 0;
+  let mode = "title";
+  let adminInput = "";
+  const ADMIN_CODE = "O0p-@^";
+  let stage = 1;
+  let unlockedStages = new Set([1]);
+
+  let gold = 0;
+  let runGold = 0;
+  let elapsed = 0;
+  let goldTimer = 0;
+  let hitFlash = 0;
+  let bulletSpeedMultiplier = 1;
+
+  let menuIndex = 0;
+  let shopTab = 0;
+  let shopMessage = "";
+  let messageTimer = 0;
 
   const keys = new Set();
   const touchDirs = new Set();
+
   let bullets = [];
   let particles = [];
   let edgeWarnings = [];
@@ -47,390 +48,250 @@
   let shotTimers = [];
   let radialTimers = [];
 
-  const player = {
-    x: 0, y: 0, r: 5, speed: 310,
-    lives: 3, maxLives: 3, invuln: 0
-  };
+  let edgeTimer = 6;
+  let patternTick = 0;
+  let spiralTimer = 0;
+  let rainTimer = 0;
+  let waveTimer = 0;
+  let rotatingBarAngle = 0;
+  let stage6BurstTimer = 5;
+  let stage6Warning = 0;
+  let waveGapY = 0.5;
+  let waveGapTarget = 0.5;
+  let waveDirectionTimer = 0;
+  let stage4RainDirection = 1;
 
   const upgrades = {
     speed: 0,
-    hearts: 0,
-    heal: 0,
-    guard: 0
+    heart: 0,
+    slow: 0,
+    gold: 0
   };
 
-  const UPGRADE_COSTS = {
-    speed: [15, 30, 45, 60],
-    hearts: [25, 50, 90],
-    heal: [35, 65, 100],
-    guard: [30, 60, 100]
-  };
-
-  // ステージ1は無料。ステージ6以降も一覧に追加できる。
-  const STAGES = [
-    { id: 1, cost: 0, name: "はじまりのステージ", color: "#ff6575" },
-    { id: 2, cost: 50, name: "エッジアタック", color: "#a78bfa" },
-    { id: 3, cost: 150, name: "グリーンボス", color: "#78e0ae" },
-    { id: 4, cost: 350, name: "オレンジボス", color: "#ffad55" },
-    { id: 5, cost: 700, name: "ピンクボス", color: "#ff6575" },
-    { id: 6, cost: 1200, name: "ナイトメア", color: "#75c9ff" },
-    { id: 7, cost: 2000, name: "カオス", color: "#a78bfa" },
-    { id: 8, cost: 3500, name: "ファイナルチャレンジ", color: "#ff465e" }
+  const ITEM_DEFS = [
+    {
+      key: "speed",
+      label: "SPEED BOOST",
+      detail: level => `MOVE SPEED +${level * 15}%`,
+      base: 35,
+      max: 4
+    },
+    {
+      key: "heart",
+      label: "EXTRA HEART",
+      detail: level => `MAX HP +${Math.round(level / 3 * 100)}%`,
+      base: 45,
+      max: 3
+    },
+    {
+      key: "slow",
+      label: "BULLET SLOW",
+      detail: level => `ENEMY BULLET SPEED -${level * 8}%`,
+      base: 65,
+      max: 4
+    },
+    {
+      key: "gold",
+      label: "GOLD BONUS",
+      detail: level => `GOLD REWARD +${level * 25}%`,
+      base: 80,
+      max: 4
+    }
   ];
 
-  const unlockedStages = new Set([1]);
+  const player = {
+    x: 0,
+    y: 0,
+    r: 5,
+    speed: 310,
+    lives: 3,
+    invuln: 0
+  };
 
-  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-  const rand = (a, b) => a + Math.random() * (b - a);
+  const STAGE_COSTS = {
+    1: 0,
+    2: 50,
+    3: 100,
+    4: 200,
+    5: 350,
+    6: 500,
+    7: 800
+  };
 
-  // ============================================================
-  // ログイン・新規登録
-  // ============================================================
+  const STAGE_REWARDS = {
+    1: 1,
+    2: 3,
+    3: 7,
+    4: 15,
+    5: 30,
+    6: 50,
+    7: 100
+  };
 
-  // 注意：これはブラウザ内だけで動く試作版です。
-  // 本番用の認証にはサーバー側のアカウント管理が必要です。
-  const AUTH_KEY = "ruuRpgAccountsV1";
-  const SESSION_KEY = "ruuRpgCurrentUserV1";
-  let currentUser = null;
-  let authRoot = null;
+  const clamp = (v, min, max) =>
+    Math.max(min, Math.min(max, v));
 
-  function readAccounts() {
-    try {
-      return JSON.parse(localStorage.getItem(AUTH_KEY) || "{}");
-    } catch {
-      return {};
-    }
-  }
-
-  function saveAccounts(accounts) {
-    localStorage.setItem(AUTH_KEY, JSON.stringify(accounts));
-  }
-
-  async function hashPassword(password) {
-    if (!crypto.subtle) {
-      throw new Error("安全なパスワード処理を利用できません。HTTPSまたはlocalhostで開いてください。");
-    }
-
-    const bytes = new TextEncoder().encode(password);
-    const hash = await crypto.subtle.digest("SHA-256", bytes);
-
-    return Array.from(new Uint8Array(hash))
-      .map(b => b.toString(16).padStart(2, "0"))
-      .join("");
-  }
-
-  function makeAuthScreen() {
-    if (authRoot) authRoot.remove();
-
-    authRoot = document.createElement("div");
-    authRoot.id = "ruu-auth";
-    authRoot.style.cssText = `
-      position:fixed; inset:0; z-index:99999;
-      display:flex; align-items:center; justify-content:center;
-      padding:20px; box-sizing:border-box;
-      background:#07111b; color:#e8edf4;
-      font-family:system-ui,sans-serif;
-    `;
-
-    authRoot.innerHTML = `
-      <div style="
-        width:min(420px,100%); box-sizing:border-box;
-        padding:28px; border:1px solid #26384b;
-        border-radius:16px; background:#101f30;
-        box-shadow:0 20px 80px #0008;
-      ">
-        <h1 style="text-align:center;margin:0 0 8px;font-size:30px">
-          RUU RPG
-        </h1>
-        <p style="text-align:center;color:#9eafc1;margin:0 0 24px">
-          ログインして冒険を始めよう
-        </p>
-
-        <div style="display:flex;gap:8px;margin-bottom:18px">
-          <button type="button" data-auth-mode="login"
-            style="flex:1;padding:11px;border:0;border-radius:8px;
-            background:#75c9ff;color:#07111b;font-weight:bold;cursor:pointer">
-            ログイン
-          </button>
-          <button type="button" data-auth-mode="register"
-            style="flex:1;padding:11px;border:1px solid #26384b;
-            border-radius:8px;background:#07111b;color:#e8edf4;cursor:pointer">
-            新規登録
-          </button>
-        </div>
-
-        <form id="ruu-auth-form">
-          <label for="ruu-username" style="display:block;margin-bottom:6px">
-            ユーザーネーム
-          </label>
-          <input id="ruu-username" name="username" required
-            maxlength="20" autocomplete="username"
-            style="box-sizing:border-box;width:100%;padding:12px;
-            margin-bottom:16px;border-radius:8px;border:1px solid #35495e;
-            background:#07111b;color:white;font-size:16px">
-
-          <label for="ruu-password" style="display:block;margin-bottom:6px">
-            パスワード
-          </label>
-          <input id="ruu-password" name="password" type="password"
-            required minlength="4" maxlength="100"
-            autocomplete="current-password"
-            style="box-sizing:border-box;width:100%;padding:12px;
-            margin-bottom:18px;border-radius:8px;border:1px solid #35495e;
-            background:#07111b;color:white;font-size:16px">
-
-          <button id="ruu-auth-submit" type="submit"
-            style="width:100%;padding:13px;border:0;border-radius:8px;
-            background:#ffd166;color:#07111b;font-weight:bold;
-            font-size:16px;cursor:pointer">
-            ログイン
-          </button>
-        </form>
-
-        <p id="ruu-auth-message" role="status"
-          style="min-height:24px;color:#ffad55;text-align:center;
-          font-size:13px;margin-bottom:0"></p>
-        <p style="color:#9eafc1;font-size:11px;line-height:1.6">
-          この試作版のアカウントは、登録したブラウザ内に保存されます。
-          ブラウザのデータを消すとアカウント情報も失われる場合があります。
-        </p>
-      </div>
-    `;
-
-    document.body.appendChild(authRoot);
-
-    let authMode = "login";
-
-    const loginTab = authRoot.querySelector('[data-auth-mode="login"]');
-    const registerTab = authRoot.querySelector('[data-auth-mode="register"]');
-    const form = authRoot.querySelector("#ruu-auth-form");
-    const message = authRoot.querySelector("#ruu-auth-message");
-    const submit = authRoot.querySelector("#ruu-auth-submit");
-    const passwordInput = authRoot.querySelector("#ruu-password");
-
-    function setAuthMode(nextMode) {
-      authMode = nextMode;
-
-      loginTab.style.background = nextMode === "login" ? "#75c9ff" : "#07111b";
-      loginTab.style.color = nextMode === "login" ? "#07111b" : "#e8edf4";
-      registerTab.style.background = nextMode === "register" ? "#75c9ff" : "#07111b";
-      registerTab.style.color = nextMode === "register" ? "#07111b" : "#e8edf4";
-
-      submit.textContent = nextMode === "login" ? "ログイン" : "新規登録";
-      passwordInput.autocomplete =
-        nextMode === "login" ? "current-password" : "new-password";
-      message.textContent = "";
-    }
-
-    loginTab.addEventListener("click", () => setAuthMode("login"));
-    registerTab.addEventListener("click", () => setAuthMode("register"));
-
-    form.addEventListener("submit", async e => {
-      e.preventDefault();
-
-      const username = authRoot.querySelector("#ruu-username").value.trim();
-      const password = passwordInput.value;
-
-      if (!/^[\p{L}\p{N}_-]{2,20}$/u.test(username)) {
-        message.textContent =
-          "ユーザーネームは2〜20文字。文字・数字・_・- が使えます。";
-        return;
-      }
-
-      if (password.length < 4) {
-        message.textContent = "パスワードは4文字以上にしてください。";
-        return;
-      }
-
-      submit.disabled = true;
-      submit.textContent = "処理中…";
-
-      try {
-        const accounts = readAccounts();
-        const passwordHash = await hashPassword(password);
-
-        if (authMode === "register") {
-          if (accounts[username]) {
-            message.textContent = "このユーザーネームは登録済みです。";
-            return;
-          }
-
-          accounts[username] = {
-            passwordHash,
-            gold: 0,
-            unlockedStages: [1],
-            upgrades: { speed: 0, hearts: 0, heal: 0, guard: 0 }
-          };
-
-          saveAccounts(accounts);
-        } else {
-          if (
-            !accounts[username] ||
-            accounts[username].passwordHash !== passwordHash
-          ) {
-            message.textContent = "ユーザーネームまたはパスワードが違います。";
-            return;
-          }
-        }
-
-        currentUser = username;
-        localStorage.setItem(SESSION_KEY, username);
-        loadUserProgress(accounts[username]);
-
-        authRoot.remove();
-        authRoot = null;
-        showTitle();
-        draw();
-      } catch (err) {
-        message.textContent = err.message || "処理に失敗しました。";
-      } finally {
-        if (submit.isConnected) {
-          submit.disabled = false;
-          submit.textContent = authMode === "login" ? "ログイン" : "新規登録";
-        }
-      }
-    });
-  }
-
-  function loadUserProgress(account) {
-    gold = Number(account.gold) || 0;
-
-    unlockedStages.clear();
-    for (const s of account.unlockedStages || [1]) {
-      unlockedStages.add(Number(s));
-    }
-    unlockedStages.add(1);
-
-    Object.assign(upgrades, {
-      speed: 0, hearts: 0, heal: 0, guard: 0,
-      ...(account.upgrades || {})
-    });
-  }
-
-  function saveUserProgress() {
-    if (!currentUser) return;
-
-    const accounts = readAccounts();
-    if (!accounts[currentUser]) return;
-
-    accounts[currentUser].gold = gold;
-    accounts[currentUser].unlockedStages = [...unlockedStages];
-    accounts[currentUser].upgrades = { ...upgrades };
-    saveAccounts(accounts);
-  }
-
-  function logout() {
-    saveUserProgress();
-    localStorage.removeItem(SESSION_KEY);
-    currentUser = null;
-    mode = "auth";
-    makeAuthScreen();
-  }
-
-  // ============================================================
-  // 画面サイズ・共通UI
-  // ============================================================
+  const rand = (min, max) =>
+    min + Math.random() * (max - min);
 
   function resize() {
     const rect = canvas.getBoundingClientRect();
+
     dpr = Math.min(window.devicePixelRatio || 1, 2);
     W = Math.max(320, rect.width);
     H = Math.max(240, rect.height);
 
     canvas.width = Math.floor(W * dpr);
     canvas.height = Math.floor(H * dpr);
+
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     if (!player.x) resetPlayer();
+
     positionEnemies();
     draw();
   }
 
   window.addEventListener("resize", resize);
 
+  window.addEventListener("orientationchange", () => {
+    setTimeout(resize, 100);
+  });
+
   function resetPlayer() {
     player.x = W / 2;
     player.y = H * 0.78;
   }
 
+  function positionEnemies() {
+    if (stage === 1) {
+      enemies = [
+        {
+          x: W * 0.5,
+          y: H * 0.16,
+          name: "CENTER"
+        },
+        {
+          x: W * 0.19,
+          y: H * 0.29,
+          name: "LEFT"
+        },
+        {
+          x: W * 0.81,
+          y: H * 0.29,
+          name: "RIGHT"
+        }
+      ];
+    } else {
+      enemies = [
+        {
+          x: W * 0.5,
+          y: stage === 6 ? H * 0.5 : H * 0.18,
+          name: "CENTER"
+        }
+      ];
+    }
+  }
+
   function showTitle() {
     mode = "title";
     menuIndex = 0;
+    shopMessage = "";
+    messageTimer = 0;
   }
 
-  function showMessage(message) {
-    shopMessage = message;
-    messageTimer = 2.5;
+  function showStageSelect() {
+    mode = "stageSelect";
+    menuIndex = 0;
+    shopMessage = "";
+    messageTimer = 0;
+  }
+
+  function openShop() {
+    mode = "shop";
+    menuIndex = 0;
+    shopMessage = "";
+    messageTimer = 0;
+  }
+
+  function startRun(selectedStage) {
+    if (!unlockedStages.has(selectedStage)) {
+      openShop();
+      shopMessage = "このステージはショップで購入してね";
+      messageTimer = 3;
+      return;
+    }
+
+    stage = selectedStage;
+
+    elapsed = 0;
+    goldTimer = 0;
+    runGold = 0;
+    hitFlash = 0;
+    bulletSpeedMultiplier = 1;
+
+    bullets = [];
+    particles = [];
+    edgeWarnings = [];
+    shotTimers = [];
+    radialTimers = [];
+
+    edgeTimer = selectedStage === 2 ? 2.25 : 5;
+    patternTick = 0;
+
+    spiralTimer = 0.25;
+    rainTimer = 0.4;
+    waveTimer = 0.6;
+    rotatingBarAngle = 0;
+    stage6BurstTimer = 5;
+    stage6Warning = 0;
+    waveGapY = 0.5;
+    waveGapTarget = 0.5;
+    waveDirectionTimer = 1.5;
+    stage4RainDirection = 1;
+
+    player.lives = 3 + upgrades.heart;
+    player.speed = 310 * (1 + upgrades.speed * 0.15);
+    player.invuln = 1.2;
+
+    resetPlayer();
+    positionEnemies();
+
+    shotTimers = enemies.map((_, i) => 0.6 + i * 0.4);
+    radialTimers = enemies.map((_, i) => 1.5 + i * 0.9);
+
+    mode = "playing";
   }
 
   function addGold(amount) {
     gold += amount;
     runGold += amount;
-    saveUserProgress();
   }
 
-  function positionEnemies() {
-    if (stage === 1) {
-      enemies = [
-        { x: W * 0.5, y: H * 0.16 },
-        { x: W * 0.19, y: H * 0.29 },
-        { x: W * 0.81, y: H * 0.29 }
-      ];
-    } else {
-      enemies = [{ x: W * 0.5, y: H * 0.18 }];
-    }
-  }
+  function fire(
+    x,
+    y,
+    angle,
+    speed,
+    color = C.pink,
+    radius = 4,
+    limitY = null
+  ) {
+    const slowMultiplier = Math.max(
+      0.68,
+      1 - upgrades.slow * 0.08
+    );
 
-  // ============================================================
-  // ステージ開始
-  // ============================================================
-
-  function startRun(s) {
-    if (!unlockedStages.has(s)) {
-      showMessage("先にショップでこのステージを購入してね");
-      mode = "shop";
-      return;
-    }
-
-    stage = s;
-    elapsed = 0;
-    goldTimer = 0;
-    runGold = 0;
-    hitFlash = 0;
-    healTimer = 0;
-    guardTimer = 0;
-    patternTick = 0;
-
-    bullets = [];
-    particles = [];
-    edgeWarnings = [];
-
-    edgeTimer = stage === 2 ? 2.2 : 2.8;
-
-    player.maxLives = 3 + upgrades.hearts;
-    player.lives = player.maxLives;
-    player.invuln = 1.5;
-
-    resetPlayer();
-    positionEnemies();
-
-    shotTimers = enemies.map((_, i) => 0.6 + i * 0.3);
-    radialTimers = enemies.map((_, i) => 1.2 + i * 0.4);
-
-    mode = "playing";
-  }
-
-  // ============================================================
-  // 攻撃
-  // ============================================================
-
-  function fire(x, y, angle, speed, color = C.pink, radius = 4) {
     bullets.push({
-      x, y,
-      vx: Math.cos(angle) * speed,
-      vy: Math.sin(angle) * speed,
+      x,
+      y,
+      vx: Math.cos(angle) * speed *
+        bulletSpeedMultiplier * slowMultiplier,
+      vy: Math.sin(angle) * speed *
+        bulletSpeedMultiplier * slowMultiplier,
       r: radius,
       color,
+      limitY,
       dead: false
     });
   }
@@ -440,74 +301,92 @@
       player.y - enemy.y,
       player.x - enemy.x
     );
+
     fire(enemy.x, enemy.y, angle, speed, color);
   }
 
-  function radialShot(enemy, count, speed, offset = 0, color = C.pink) {
+  function radialShot(
+    enemy,
+    count,
+    speed,
+    offset = 0,
+    color = C.pink
+  ) {
     for (let i = 0; i < count; i++) {
       const angle = offset + i * Math.PI * 2 / count;
-      fire(enemy.x, enemy.y, angle, speed, i % 4 === 0 ? C.orange : color);
+
+      fire(
+        enemy.x,
+        enemy.y,
+        angle,
+        speed,
+        i % 3 === 0 ? C.orange : color
+      );
     }
   }
 
-  function fanShot(enemy, count, spread, speed, color = C.orange) {
+  function fanShot(
+    enemy,
+    count,
+    spread,
+    speed,
+    color = C.orange
+  ) {
     const base = Math.atan2(
       player.y - enemy.y,
       player.x - enemy.x
     );
 
     for (let i = 0; i < count; i++) {
-      const offset = count === 1 ? 0 :
-        -spread / 2 + spread * i / (count - 1);
+      const offset = count === 1
+        ? 0
+        : -spread / 2 + spread * i / (count - 1);
 
-      fire(enemy.x, enemy.y, base + offset, speed, color);
+      fire(
+        enemy.x,
+        enemy.y,
+        base + offset,
+        speed,
+        color
+      );
     }
   }
 
   function edgeBurst() {
     const side = Math.floor(Math.random() * 4);
+
     let x, y, angle;
 
     if (side === 0) {
-      x = rand(25, W - 25); y = 18; angle = Math.PI / 2;
+      x = rand(25, W - 25);
+      y = 18;
+      angle = Math.PI / 2;
     } else if (side === 1) {
-      x = W - 18; y = rand(45, H - 25); angle = Math.PI;
+      x = W - 18;
+      y = rand(45, H - 25);
+      angle = Math.PI;
     } else if (side === 2) {
-      x = rand(25, W - 25); y = H - 18; angle = -Math.PI / 2;
+      x = rand(25, W - 25);
+      y = H - 18;
+      angle = -Math.PI / 2;
     } else {
-      x = 18; y = rand(45, H - 25); angle = 0;
+      x = 18;
+      y = rand(45, H - 25);
+      angle = 0;
     }
 
     edgeWarnings.push({
-      x, y, angle,
-      life: stage === 2 ? 0.55 : 0.65,
+      x,
+      y,
+      angle,
+      life: 0.8,
       fired: false
     });
   }
 
-  // ステージ2は攻撃数を控えめにし、時間差で発生させる
-  function edgeAttack() {
-    const count = stage === 2
-      ? Math.floor(rand(1, 3))   // 1〜2か所
-      : Math.floor(rand(2, Math.min(6, stage + 2)));
-
-    for (let i = 0; i < count; i++) {
-      // 予告の寿命に差をつけ、同時発生を避ける
-      const delay = stage === 2 ? i * rand(0.35, 0.75) : i * 0.2;
-      edgeBurst();
-
-      const warning = edgeWarnings[edgeWarnings.length - 1];
-      warning.life += delay;
-    }
-  }
-
-  // ============================================================
-  // 更新処理
-  // ============================================================
-
   function update(dt) {
     if (messageTimer > 0) {
-      messageTimer = Math.max(0, messageTimer - dt);
+      messageTimer -= dt;
     }
 
     if (mode !== "playing") return;
@@ -518,188 +397,439 @@
     player.invuln = Math.max(0, player.invuln - dt);
     hitFlash = Math.max(0, hitFlash - dt);
 
-    let dx = 0, dy = 0;
+    const tier = Math.floor(elapsed / 30);
 
-    if (keys.has("ArrowLeft") || keys.has("KeyA") || touchDirs.has("left")) dx--;
-    if (keys.has("ArrowRight") || keys.has("KeyD") || touchDirs.has("right")) dx++;
-    if (keys.has("ArrowUp") || keys.has("KeyW") || touchDirs.has("up")) dy--;
-    if (keys.has("ArrowDown") || keys.has("KeyS") || touchDirs.has("down")) dy++;
+    bulletSpeedMultiplier =
+      1 +
+      0.65 * tier +
+      0.15 * tier * (tier - 1) / 2;
+
+    let dx = 0;
+    let dy = 0;
+
+    if (
+      keys.has("ArrowLeft") ||
+      keys.has("KeyA") ||
+      touchDirs.has("left")
+    ) dx--;
+
+    if (
+      keys.has("ArrowRight") ||
+      keys.has("KeyD") ||
+      touchDirs.has("right")
+    ) dx++;
+
+    if (
+      keys.has("ArrowUp") ||
+      keys.has("KeyW") ||
+      touchDirs.has("up")
+    ) dy--;
+
+    if (
+      keys.has("ArrowDown") ||
+      keys.has("KeyS") ||
+      touchDirs.has("down")
+    ) dy++;
 
     if (dx && dy) {
       dx *= Math.SQRT1_2;
       dy *= Math.SQRT1_2;
     }
 
-    const speedMultiplier = [1, 1.25, 1.5, 1.75, 2][upgrades.speed] || 2;
-
     player.x = clamp(
-      player.x + dx * player.speed * speedMultiplier * dt,
-      12, W - 12
+      player.x + dx * player.speed * dt,
+      12,
+      W - 12
     );
 
     player.y = clamp(
-      player.y + dy * player.speed * speedMultiplier * dt,
-      45, H - 18
+      player.y + dy * player.speed * dt,
+      45,
+      H - 18
     );
 
-    // 自動回復
-    if (upgrades.heal > 0 && player.lives < player.maxLives) {
-      healTimer += dt;
-      const interval = Math.max(5, 16 - upgrades.heal * 3);
-
-      if (healTimer >= interval) {
-        healTimer = 0;
-        player.lives = Math.min(player.maxLives, player.lives + 1);
-      }
-    }
-
-    guardTimer = Math.max(0, guardTimer - dt);
-
-    // ステージ1
+    // Stage 1
     if (stage === 1) {
       for (let i = 0; i < enemies.length; i++) {
         const enemy = enemies[i];
 
         shotTimers[i] -= dt;
+
         if (shotTimers[i] <= 0) {
-          aimedShot(enemy, i === 0 ? 205 : 190, i === 0 ? C.pink : C.orange);
-          shotTimers[i] = Math.max(0.5, (i === 0 ? 1.1 : 1.35) - elapsed * 0.002);
+          if (i === 0) {
+            aimedShot(enemy, 205, C.pink);
+
+            shotTimers[i] = Math.max(
+              0.4,
+              0.92 - elapsed * 0.003
+            );
+          } else {
+            aimedShot(enemy, 190, C.orange);
+
+            shotTimers[i] = Math.max(
+              0.52,
+              1.2 - elapsed * 0.003
+            );
+          }
         }
 
         radialTimers[i] -= dt;
+
         if (radialTimers[i] <= 0) {
           if (i === 0) {
-            radialShot(enemy, 12, 135 + Math.min(35, elapsed * 0.5),
-              patternTick * 0.25, C.pink);
-            radialTimers[i] = 3.2;
+            radialShot(
+              enemy,
+              12,
+              135 + Math.min(35, elapsed * 0.5),
+              patternTick * 0.25,
+              C.pink
+            );
+
+            radialTimers[i] = 3.1;
+          } else if (i === 1) {
+            fanShot(
+              enemy,
+              11,
+              1.65,
+              155 + Math.min(35, elapsed * 0.5),
+              C.orange
+            );
+
+            if (Math.random() < 0.35) {
+              radialShot(
+                enemy,
+                9,
+                115 + Math.min(30, elapsed * 0.4),
+                patternTick * 0.3,
+                C.pink
+              );
+            }
+
+            radialTimers[i] = 3.8;
           } else {
-            fanShot(enemy, 9, 1.4, 150 + Math.min(35, elapsed * 0.5), C.orange);
-            radialTimers[i] = 3.5;
+            fanShot(
+              enemy,
+              11,
+              1.65,
+              155 + Math.min(35, elapsed * 0.5),
+              C.orange
+            );
+
+            if (Math.random() < 0.35) {
+              radialShot(
+                enemy,
+                9,
+                115 + Math.min(30, elapsed * 0.4),
+                -patternTick * 0.3,
+                C.pink
+              );
+            }
+
+            radialTimers[i] = 4.2;
           }
         }
       }
     }
 
-    // ステージ2：放射攻撃と、少し減らした画面端攻撃
+    // Stage 2: radial attacks and screen-edge attacks
     if (stage === 2) {
       radialTimers[0] -= dt;
 
       if (radialTimers[0] <= 0) {
         radialShot(
           enemies[0],
-          18 + Math.min(10, Math.floor(elapsed / 8)),
+          16 + Math.min(10, Math.floor(elapsed / 8)),
           155 + Math.min(45, elapsed * 0.6),
-          patternTick * 0.16,
-          C.purple
+          patternTick * 0.16
         );
 
-        radialTimers[0] = 1.55;
-
-        if (Math.random() < 0.35) {
-          fanShot(enemies[0], 7, 1.5, 160, C.orange);
-        }
+        radialTimers[0] = 2.05;
       }
 
       edgeTimer -= dt;
 
       if (edgeTimer <= 0) {
-        edgeAttack();
-        // 攻撃の間隔を長めにして、連続しすぎないようにする
-        edgeTimer = rand(1.1, 1.8);
+        edgeBurst();
+
+        if (Math.random() < 0.22) {
+          edgeBurst();
+        }
+
+        edgeTimer = rand(2.0, 3.7);
       }
     }
 
-    // ステージ3以降
-    if (stage >= 3) {
-      const boss = enemies[0];
+    // Stage 3: spiral bullets around a stationary enemy
+    if (stage === 3) {
+      spiralTimer -= dt;
 
-      shotTimers[0] -= dt;
-      radialTimers[0] -= dt;
+      if (spiralTimer <= 0) {
+        const e = enemies[0];
+        const a = patternTick * 2.1;
+        const speed = 125 + Math.min(45, elapsed * 0.5);
 
-      if (shotTimers[0] <= 0) {
-        fanShot(
-          boss,
-          7 + stage * 2,
-          1.4 + stage * 0.1,
-          150 + stage * 18,
-          STAGES[stage - 1]?.color || C.pink
-        );
+        fire(e.x, e.y, a, speed, C.pink, 4);
+        fire(e.x, e.y, a + Math.PI, speed, C.blue, 4);
 
-        shotTimers[0] = Math.max(0.35, 1.2 - stage * 0.08);
+        spiralTimer = 0.075;
       }
+
+      radialTimers[0] -= dt;
 
       if (radialTimers[0] <= 0) {
         radialShot(
-          boss,
-          14 + stage * 4,
-          145 + stage * 16,
-          patternTick * (0.2 + stage * 0.035),
-          STAGES[stage - 1]?.color || C.pink
+          enemies[0],
+          10,
+          145,
+          patternTick * 0.4,
+          C.orange
         );
 
-        radialTimers[0] = Math.max(0.6, 2.2 - stage * 0.18);
-      }
-
-      edgeTimer -= dt;
-      if (edgeTimer <= 0) {
-        edgeAttack();
-        edgeTimer = rand(
-          Math.max(0.5, 1.5 - stage * 0.1),
-          Math.max(0.8, 2.1 - stage * 0.1)
-        );
+        radialTimers[0] = 4.5;
       }
     }
 
-    // 予告終了後に画面端から発射
+    // Stage 4: rain of bullets with an unpredictable slant
+    if (stage === 4) {
+      rainTimer -= dt;
+      waveDirectionTimer -= dt;
+
+      if (waveDirectionTimer <= 0) {
+        rainTimer = Math.min(rainTimer, 0.12);
+        waveDirectionTimer = rand(1.1, 2.8);
+
+        stage4RainDirection =
+          Math.random() < 0.5 ? -1 : 1;
+      }
+
+      if (rainTimer <= 0) {
+        const count = 7 + Math.floor(Math.random() * 5);
+
+        for (let i = 0; i < count; i++) {
+          const x = rand(18, W - 18);
+          const angle =
+            Math.PI / 2 +
+            stage4RainDirection * rand(0.08, 0.34);
+
+          fire(
+            x,
+            30,
+            angle,
+            rand(175, 235),
+            i % 3 ? C.blue : C.orange,
+            4
+          );
+        }
+
+        rainTimer = rand(0.28, 0.62);
+      }
+    }
+
+    // Stage 5: waves from the top and bottom.
+    // The safe corridor moves up and down.
+    if (stage === 5) {
+      waveTimer -= dt;
+      waveDirectionTimer -= dt;
+
+      if (waveDirectionTimer <= 0) {
+        waveGapTarget = rand(0.28, 0.72);
+        waveDirectionTimer = rand(1.0, 1.8);
+      }
+
+      waveGapY +=
+        (waveGapTarget - waveGapY) *
+        Math.min(1, dt * 1.6);
+
+      if (waveTimer <= 0) {
+        const gapSize = Math.max(82, H * 0.19);
+        const gapCenter = H * waveGapY;
+        const topLimit = gapCenter - gapSize / 2;
+        const bottomLimit = gapCenter + gapSize / 2;
+        const spacing = 19;
+
+        for (let x = 12; x < W - 12; x += spacing) {
+          fire(
+            x, 22,
+            Math.PI / 2,
+            220,
+            C.orange,
+            4,
+            topLimit
+          );
+
+          fire(
+            x, H - 22,
+            -Math.PI / 2,
+            220,
+            C.pink,
+            4,
+            bottomLimit
+          );
+        }
+
+        waveTimer = rand(0.48, 0.72);
+      }
+    }
+
+    // Stage 6: rotating bar and a periodic wide attack
+    if (stage === 6) {
+      rotatingBarAngle += dt * 1.35;
+
+      const e = enemies[0];
+      const barLength = Math.min(W, H) * 0.43;
+
+      const ax =
+        e.x - Math.cos(rotatingBarAngle) * barLength;
+      const ay =
+        e.y - Math.sin(rotatingBarAngle) * barLength;
+      const bx =
+        e.x + Math.cos(rotatingBarAngle) * barLength;
+      const by =
+        e.y + Math.sin(rotatingBarAngle) * barLength;
+
+      const dxBar = bx - ax;
+      const dyBar = by - ay;
+      const denom = dxBar * dxBar + dyBar * dyBar || 1;
+
+      const tBar = clamp(
+        (
+          (player.x - ax) * dxBar +
+          (player.y - ay) * dyBar
+        ) / denom,
+        0,
+        1
+      );
+
+      const closestX = ax + tBar * dxBar;
+      const closestY = ay + tBar * dyBar;
+
+      if (
+        player.invuln <= 0 &&
+        Math.hypot(
+          player.x - closestX,
+          player.y - closestY
+        ) < 10
+      ) {
+        player.lives--;
+        player.invuln = 1.25;
+        hitFlash = 0.2;
+
+        if (player.lives <= 0) {
+          mode = "gameover";
+          menuIndex = 0;
+          bullets = [];
+          edgeWarnings = [];
+        }
+      }
+
+      stage6BurstTimer -= dt;
+
+      if (stage6Warning > 0) {
+        stage6Warning -= dt;
+
+        if (stage6Warning <= 0) {
+          radialShot(
+            e,
+            28,
+            195,
+            patternTick * 0.12,
+            C.orange
+          );
+        }
+      }
+
+      if (
+        stage6BurstTimer <= 0 &&
+        stage6Warning <= 0
+      ) {
+        stage6Warning = 0.8;
+        stage6BurstTimer = rand(6, 9);
+      }
+    }
+
+    // Stage 7: fast radial attack and aimed shots
+    if (stage === 7) {
+      radialTimers[0] -= dt;
+      shotTimers[0] -= dt;
+
+      if (radialTimers[0] <= 0) {
+        radialShot(
+          enemies[0],
+          32,
+          185,
+          patternTick * 0.22,
+          C.blue
+        );
+
+        radialTimers[0] = 2.1;
+      }
+
+      if (shotTimers[0] <= 0) {
+        aimedShot(enemies[0], 225, C.pink);
+        shotTimers[0] = 0.65;
+      }
+    }
+
+    // Edge warnings become attacks after a short delay
     for (const warning of edgeWarnings) {
       warning.life -= dt;
 
       if (warning.life <= 0 && !warning.fired) {
         warning.fired = true;
 
-        const count = stage === 2 ? 7 : 5 + stage * 2;
-        const spread = stage === 2 ? 0.2 : 0.14;
-
-        for (let i = 0; i < count; i++) {
-          const offset = (i - (count - 1) / 2) * spread;
+        for (let i = -3; i <= 3; i++) {
           fire(
-            warning.x, warning.y,
-            warning.angle + offset,
-            220 + stage * 15,
-            stage >= 4 ? C.pink : C.orange
+            warning.x,
+            warning.y,
+            warning.angle + i * 0.15,
+            235,
+            C.orange
           );
         }
       }
     }
 
-    edgeWarnings = edgeWarnings.filter(w => w.life > -0.6);
+    edgeWarnings = edgeWarnings.filter(w => w.life > -0.8);
 
+    // Move bullets and detect collisions
     for (const bullet of bullets) {
       bullet.x += bullet.vx * dt;
       bullet.y += bullet.vy * dt;
 
       if (
+        bullet.limitY !== null &&
+        bullet.limitY !== undefined
+      ) {
+        if (
+          (bullet.vy > 0 && bullet.y >= bullet.limitY) ||
+          (bullet.vy < 0 && bullet.y <= bullet.limitY)
+        ) {
+          bullet.dead = true;
+        }
+      }
+
+      if (
         !bullet.dead &&
         player.invuln <= 0 &&
-        Math.hypot(player.x - bullet.x, player.y - bullet.y) <
-          player.r + bullet.r
+        Math.hypot(
+          player.x - bullet.x,
+          player.y - bullet.y
+        ) < player.r + bullet.r
       ) {
-        if (upgrades.guard > 0 && guardTimer <= 0) {
-          guardTimer = Math.max(1.5, 5 - upgrades.guard);
-          bullet.dead = true;
-          continue;
-        }
-
         bullet.dead = true;
+
         player.lives--;
-        player.invuln = 1.15;
+        player.invuln = 1.25;
         hitFlash = 0.2;
 
         for (let i = 0; i < 8; i++) {
           particles.push({
-            x: player.x, y: player.y,
-            vx: rand(-65, 65), vy: rand(-65, 65),
-            life: 0.35, color: C.pink
+            x: player.x,
+            y: player.y,
+            vx: rand(-65, 65),
+            vy: rand(-65, 65),
+            life: 0.35,
+            color: C.pink
           });
         }
 
@@ -708,14 +838,14 @@
           menuIndex = 0;
           bullets = [];
           edgeWarnings = [];
-          saveUserProgress();
           break;
         }
       }
     }
 
     bullets = bullets.filter(b =>
-      !b.dead && b.x > -40 && b.x < W + 40 &&
+      !b.dead &&
+      b.x > -40 && b.x < W + 40 &&
       b.y > -40 && b.y < H + 40
     );
 
@@ -724,32 +854,59 @@
       p.y += p.vy * dt;
       p.life -= dt;
     }
+
     particles = particles.filter(p => p.life > 0);
 
+    // Gold is awarded every 10 seconds.
     goldTimer += dt;
+
     while (goldTimer >= 10) {
       goldTimer -= 10;
-      const reward = stage === 1 ? 1 : stage * 2;
-      addGold(reward);
+
+      const goldTier = Math.floor(elapsed / 30);
+      const baseReward = STAGE_REWARDS[stage] || 1;
+
+      addGold(
+        Math.round(
+          baseReward *
+          (1 + upgrades.gold * 0.25) *
+          Math.pow(2, goldTier)
+        )
+      );
     }
   }
 
-  // ============================================================
-  // 描画
-  // ============================================================
-
   function rect(x, y, w, h, color) {
     ctx.fillStyle = color;
-    ctx.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
+
+    ctx.fillRect(
+      Math.round(x),
+      Math.round(y),
+      Math.round(w),
+      Math.round(h)
+    );
   }
 
-  function text(value, x, y, size = 16, color = C.white, align = "left") {
+  function text(
+    value,
+    x,
+    y,
+    size = 16,
+    color = C.white,
+    align = "left"
+  ) {
     ctx.save();
-    ctx.font = `bold ${size}px system-ui, sans-serif`;
+    ctx.font = `bold ${size}px "Courier New", monospace`;
     ctx.textAlign = align;
     ctx.textBaseline = "middle";
     ctx.fillStyle = color;
-    ctx.fillText(String(value), Math.round(x), Math.round(y));
+
+    ctx.fillText(
+      String(value),
+      Math.round(x),
+      Math.round(y)
+    );
+
     ctx.restore();
   }
 
@@ -757,656 +914,994 @@
     rect(0, 0, W, H, C.bg);
 
     ctx.strokeStyle = C.line;
+    ctx.lineWidth = 1;
     ctx.strokeRect(1, 1, W - 2, H - 2);
 
     ctx.globalAlpha = 0.13;
-    for (let x = 20; x < W; x += 32) rect(x, 0, 1, H, "#1d3042");
-    for (let y = 20; y < H; y += 32) rect(0, y, W, 1, "#1d3042");
+
+    for (let x = 20; x < W; x += 32) {
+      rect(x, 0, 1, H, "#1d3042");
+    }
+
+    for (let y = 20; y < H; y += 32) {
+      rect(0, y, W, 1, "#1d3042");
+    }
+
     ctx.globalAlpha = 1;
   }
 
-  function drawDemon(x, y, color = C.red) {
-    rect(x - 5, y - 21, 5, 8, C.orange);
-    rect(x + 1, y - 21, 5, 8, C.orange);
-    rect(x - 17, y - 13, 34, 26, color);
-    rect(x - 22, y - 5, 5, 12, color);
-    rect(x + 17, y - 5, 5, 12, color);
-    rect(x - 10, y - 5, 6, 6, C.bg);
-    rect(x + 4, y - 5, 6, 6, C.bg);
-    rect(x - 5, y + 6, 10, 3, C.bg);
-    rect(x - 11, y + 13, 7, 5, C.orange);
-    rect(x + 4, y + 13, 7, 5, C.orange);
-  }
+  function drawEnemy(enemy, index) {
+    const x = Math.round(enemy.x);
+    const y = Math.round(enemy.y);
 
-  function drawEnemy(enemy) {
-    if (stage === 1) {
-      // ステージ1の全員を中央のキャラと同じイラストにする
-      drawDemon(enemy.x, enemy.y, C.red);
+    if (stage === 2) {
+      rect(x - 5, y - 23, 10, 6, "#c7c1ff");
+      rect(x - 13, y - 17, 26, 6, "#6a5ae0");
+      rect(x - 19, y - 11, 38, 22, "#8c7bff");
+      rect(x - 25, y - 5, 6, 12, "#56d9ff");
+      rect(x + 19, y - 5, 6, 12, "#56d9ff");
+      rect(x - 13, y - 17, 6, 6, "#ff6575");
+      rect(x + 7, y - 17, 6, 6, "#ff6575");
+      rect(x - 12, y - 5, 7, 7, "#07111b");
+      rect(x + 5, y - 5, 7, 7, "#07111b");
+      rect(x - 6, y + 7, 12, 4, "#07111b");
+      rect(x - 9, y + 15, 18, 5, "#56d9ff");
       return;
     }
 
-    const color = STAGES[stage - 1]?.color || C.pink;
-    const x = enemy.x, y = enemy.y;
-
-    rect(x - 9, y - 26, 7, 12, color);
-    rect(x + 2, y - 26, 7, 12, color);
-    rect(x - 24, y - 15, 48, 30, color);
-    rect(x - 30, y - 5, 6, 16, C.purple);
-    rect(x + 24, y - 5, 6, 16, C.purple);
-    rect(x - 13, y - 6, 7, 7, C.bg);
-    rect(x + 6, y - 6, 7, 7, C.bg);
-    rect(x - 9, y + 8, 18, 4, C.bg);
+    if (index === 0) {
+      rect(x - 5, y - 21, 5, 8, "#ffad55");
+      rect(x + 1, y - 21, 5, 8, "#ffad55");
+      rect(x - 17, y - 13, 34, 26, "#ff465e");
+      rect(x - 22, y - 5, 5, 12, "#ff465e");
+      rect(x + 17, y - 5, 5, 12, "#ff465e");
+      rect(x - 10, y - 5, 6, 6, "#07111b");
+      rect(x + 4, y - 5, 6, 6, "#07111b");
+      rect(x - 5, y + 6, 10, 3, "#07111b");
+      rect(x - 11, y + 13, 7, 5, "#ffad55");
+      rect(x + 4, y + 13, 7, 5, "#ffad55");
+    } else if (index === 1) {
+      rect(x - 10, y - 18, 7, 8, "#ffe08a");
+      rect(x + 3, y - 18, 7, 8, "#ffe08a");
+      rect(x - 16, y - 10, 32, 20, "#ffad55");
+      rect(x - 23, y - 3, 7, 7, "#ff7b35");
+      rect(x + 16, y - 3, 7, 7, "#ff7b35");
+      rect(x - 10, y - 3, 5, 5, "#07111b");
+      rect(x + 5, y - 3, 5, 5, "#07111b");
+      rect(x - 6, y + 7, 12, 3, "#07111b");
+      rect(x - 12, y + 10, 5, 6, "#ff7b35");
+      rect(x + 7, y + 10, 5, 6, "#ff7b35");
+    } else {
+      rect(x - 5, y - 23, 10, 8, "#b7ffcf");
+      rect(x - 15, y - 15, 30, 24, "#78e0ae");
+      rect(x - 22, y - 7, 7, 13, "#48b985");
+      rect(x + 15, y - 7, 7, 13, "#48b985");
+      rect(x - 10, y - 7, 5, 6, "#07111b");
+      rect(x + 5, y - 7, 5, 6, "#07111b");
+      rect(x - 5, y + 5, 10, 3, "#07111b");
+      rect(x - 10, y + 9, 6, 7, "#b7ffcf");
+      rect(x + 4, y + 9, 6, 7, "#b7ffcf");
+    }
   }
 
   function drawPlayer() {
-    if (player.invuln > 0 && Math.floor(player.invuln * 12) % 2 === 0) return;
+    if (
+      player.invuln > 0 &&
+      Math.floor(player.invuln * 12) % 2 === 0
+    ) return;
 
     rect(player.x - 3, player.y - 7, 6, 14, C.red);
     rect(player.x - 7, player.y - 3, 14, 6, C.red);
     rect(player.x - 2, player.y - 2, 4, 4, "#ff9aa5");
-
-    if (upgrades.guard > 0 && guardTimer > 0) {
-      ctx.strokeStyle = C.blue;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(player.x, player.y, 13, 0, Math.PI * 2);
-      ctx.stroke();
-    }
   }
 
-  function drawBullet(b) {
-    rect(b.x - b.r, b.y - b.r, b.r * 2, b.r * 2, b.color);
-    rect(b.x - 1, b.y - 1, 2, 2, "#fff0d0");
-  }
-
-  function drawButton(label, x, y, selected, width = 300, height = 44) {
+  function drawBullet(bullet) {
     rect(
-      x - width / 2, y - height / 2, width, height,
+      bullet.x - bullet.r,
+      bullet.y - bullet.r,
+      bullet.r * 2,
+      bullet.r * 2,
+      bullet.color
+    );
+
+    rect(bullet.x - 1, bullet.y - 1, 2, 2, "#fff0d0");
+  }
+
+  function drawButton(
+    label,
+    x,
+    y,
+    selected,
+    width = 300,
+    height = 48
+  ) {
+    rect(
+      x - width / 2,
+      y - height / 2,
+      width,
+      height,
       selected ? "#1b3850" : C.panel
     );
 
     ctx.strokeStyle = selected ? C.blue : C.line;
     ctx.lineWidth = selected ? 2 : 1;
-    ctx.strokeRect(x - width / 2, y - height / 2, width, height);
+
+    ctx.strokeRect(
+      x - width / 2,
+      y - height / 2,
+      width,
+      height
+    );
 
     text(
-      `${selected ? "> " : ""}${label}`,
-      x, y, Math.min(16, width * 0.05),
-      selected ? C.gold : C.white, "center"
+      `${selected ? "> " : "  "}${label}`,
+      x,
+      y,
+      Math.min(18, width * 0.052),
+      selected ? C.gold : C.white,
+      "center"
     );
   }
 
   function drawTitle() {
-    drawDemon(W / 2, H * 0.16);
+    drawEnemy({ x: W / 2, y: H * 0.16 }, 0);
 
-    text("RUU RPG", W / 2, H * 0.29, 38, C.white, "center");
-    text("DODGE - SURVIVE - COLLECT GOLD", W / 2, H * 0.37, 13, C.muted, "center");
+    text(
+      "RUU RPG",
+      W / 2,
+      H * 0.29,
+      Math.min(38, W * 0.05),
+      C.white,
+      "center"
+    );
 
-    drawButton("ステージ選択", W / 2, H * 0.53, menuIndex === 0, Math.min(W - 40, 360), 52);
-    drawButton("ショップ", W / 2, H * 0.66, menuIndex === 1, Math.min(W - 40, 300), 44);
-    drawButton("ログアウト", W / 2, H * 0.77, menuIndex === 2, Math.min(W - 40, 260), 38);
+    text(
+      "DODGE - SURVIVE - COLLECT GOLD",
+      W / 2,
+      H * 0.37,
+      Math.min(15, W * 0.02),
+      C.muted,
+      "center"
+    );
 
-    text(`ユーザー: ${currentUser || "未ログイン"}`, 16, 20, 12, C.muted);
-    text(`GOLD ${gold}`, W - 18, 22, 15, C.gold, "right");
+    drawButton(
+      "GAME START",
+      W / 2,
+      H * 0.53,
+      menuIndex === 0,
+      Math.min(W - 40, 380),
+      64
+    );
+
+    drawButton(
+      "SHOP",
+      W / 2,
+      H * 0.67,
+      menuIndex === 1,
+      Math.min(W - 40, 300),
+      48
+    );
+
+    text(
+      "UP / DOWN: SELECT   SPACE: CONFIRM",
+      W / 2,
+      H * 0.81,
+      12,
+      C.muted,
+      "center"
+    );
+
+    text(
+      `GOLD ${gold}`,
+      W - 20,
+      24,
+      16,
+      C.gold,
+      "right"
+    );
   }
 
   function drawStageSelect() {
-    text("ステージ選択", W / 2, 36, 25, C.white, "center");
-    text(`GOLD: ${gold}`, W / 2, 68, 13, C.gold, "center");
+    text("SELECT STAGE", W / 2, H * 0.1, 25, C.white, "center");
+    text(`YOUR GOLD: ${gold}`, W / 2, H * 0.17, 15, C.gold, "center");
 
-    const gap = Math.min(53, (H - 145) / 6);
-    const startY = 105;
+    const items = [];
 
-    for (let i = 0; i < STAGES.length; i++) {
-      const s = STAGES[i];
-      const y = startY + i * gap - shopScroll * gap;
+    for (let n = 1; n <= 7; n++) {
+      const unlocked = unlockedStages.has(n);
 
-      if (y < 85 || y > H - 48) continue;
+      items.push({
+        label: `STAGE ${n} ${unlocked ? "- PLAY" : "- LOCKED"}`,
+        detail: `FIRST REWARD: ${STAGE_REWARDS[n]} GOLD${
+          unlocked ? "" : ` | SHOP COST ${STAGE_COSTS[n]}G`
+        }`,
+        unlocked
+      });
+    }
+
+    items.push({
+      label: "BACK",
+      detail: "RETURN TO TITLE",
+      unlocked: true
+    });
+
+    const rowGap = Math.min(47, H * 0.083);
+    const startY = H * 0.25;
+    const visible = 7;
+    const offset = Math.max(
+      0,
+      Math.min(items.length - visible, menuIndex - visible + 1)
+    );
+
+    items.slice(offset, offset + visible).forEach((item, i) => {
+      const index = offset + i;
 
       drawButton(
-        `${s.id}. ${unlockedStages.has(s.id) ? "PLAY" : "LOCKED"} - ${s.name}`,
-        W / 2, y, menuIndex === i,
-        Math.min(W - 30, 420), 34
+        item.label,
+        W / 2,
+        startY + i * rowGap,
+        menuIndex === index,
+        Math.min(W - 36, 460),
+        30
       );
-    }
 
-    text("マウスホイールでスクロール", W / 2, H - 24, 11, C.muted, "center");
+      text(
+        item.detail,
+        W / 2,
+        startY + i * rowGap + 17,
+        9,
+        item.unlocked ? C.muted : C.orange,
+        "center"
+      );
+    });
+
+    text(
+      "UP / DOWN: SELECT   SPACE: CONFIRM   ESC: BACK",
+      W / 2,
+      H * 0.94,
+      11,
+      C.muted,
+      "center"
+    );
   }
-
-  // ============================================================
-  // ショップ：左に強化、右にステージ
-  // ============================================================
-
-  const UPGRADE_ITEMS = [
-    {
-      id: "speed",
-      name: "移動速度アップ",
-      desc: "移動速度を上げる",
-      color: C.blue
-    },
-    {
-      id: "hearts",
-      name: "最大ライフ増加",
-      desc: "最大HPを1増やす",
-      color: C.pink
-    },
-    {
-      id: "heal",
-      name: "自動回復",
-      desc: "時間経過でHP回復",
-      color: C.green
-    },
-    {
-      id: "guard",
-      name: "弾ガード",
-      desc: "一定間隔で弾を防ぐ",
-      color: C.purple
-    }
-  ];
 
   function drawShop() {
-    text("SHOP", W / 2, 24, 25, C.gold, "center");
-    text(`GOLD: ${gold}`, W - 16, 24, 13, C.gold, "right");
+    text("SHOP", W / 2, H * 0.09, 28, C.gold, "center");
+    text(`YOUR GOLD: ${gold}`, W / 2, H * 0.16, 15, C.white, "center");
 
-    const margin = 12;
-    const top = 54;
-    const bottom = H - 55;
-    const availableH = bottom - top;
-
+    const margin = 16;
+    const gapX = 18;
+    const colW = (W - margin * 2 - gapX) / 2;
     const leftX = margin;
-    const leftW = W * 0.43 - margin;
-    const rightX = W * 0.45;
-    const rightW = W - rightX - margin;
+    const rightX = margin + colW + gapX;
+    const panelY = H * 0.22;
+    const panelH = H * 0.62;
 
-    // 左側：アイテム・アップグレード
-    rect(leftX, top, leftW, availableH, "#0b1927");
-    ctx.strokeStyle = C.line;
-    ctx.strokeRect(leftX, top, leftW, availableH);
-    text("アイテム・強化", leftX + leftW / 2, top + 19, 14, C.blue, "center");
+    rect(
+      leftX,
+      panelY,
+      colW,
+      panelH,
+      shopTab === 0 ? "#122b3d" : C.panel
+    );
 
-    const itemTop = top + 47;
-    const itemH = Math.min(83, (availableH - 55) / UPGRADE_ITEMS.length);
+    rect(
+      rightX,
+      panelY,
+      colW,
+      panelH,
+      shopTab === 1 ? "#122b3d" : C.panel
+    );
 
-    for (let i = 0; i < UPGRADE_ITEMS.length; i++) {
-      const item = UPGRADE_ITEMS[i];
-      const y = itemTop + i * itemH;
-      const level = upgrades[item.id];
-      const costs = UPGRADE_COSTS[item.id];
-      const maxed = level >= costs.length;
-      const cost = maxed ? null : costs[level];
+    ctx.strokeStyle = shopTab === 0 ? C.blue : C.line;
+    ctx.strokeRect(leftX, panelY, colW, panelH);
 
-      rect(leftX + 7, y, leftW - 14, itemH - 6, C.panel);
-      ctx.strokeStyle = menuIndex === i ? C.blue : C.line;
-      ctx.lineWidth = menuIndex === i ? 2 : 1;
-      ctx.strokeRect(leftX + 7, y, leftW - 14, itemH - 6);
-
-      rect(leftX + 14, y + 10, 5, itemH - 26, item.color);
-
-      const textX = leftX + 27;
-      const maxTextW = Math.max(50, leftW - 43);
-
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(textX, y + 1, maxTextW, itemH - 8);
-      ctx.clip();
-
-      text(item.name, textX, y + 17, 12, C.white);
-      text(`Lv. ${level}/${costs.length}`, textX, y + 35, 11, C.muted);
-      text(maxed ? "MAX" : `${cost} GOLD`, textX, y + 52, 11, maxed ? C.green : C.gold);
-      text(item.desc, textX, y + 66, 9, C.muted);
-      ctx.restore();
-    }
-
-    // 右側：上からステージ1、2、3、4、5、6……
-    rect(rightX, top, rightW, availableH, "#0b1927");
-    ctx.strokeStyle = C.line;
-    ctx.strokeRect(rightX, top, rightW, availableH);
-    text("ステージ", rightX + rightW / 2, top + 19, 14, C.orange, "center");
-
-    const listTop = top + 44;
-    const rowH = 43;
-    const visibleRows = Math.max(1, Math.floor((availableH - 49) / rowH));
-    const maxScroll = Math.max(0, STAGES.length - visibleRows);
-    shopScroll = clamp(shopScroll, 0, maxScroll);
-
-    for (let row = 0; row < visibleRows; row++) {
-      const i = row + shopScroll;
-      const s = STAGES[i];
-      if (!s) continue;
-
-      const y = listTop + row * rowH;
-      const selected = menuIndex === UPGRADE_ITEMS.length + i;
-      const owned = unlockedStages.has(s.id);
-
-      rect(rightX + 6, y, rightW - 12, rowH - 4, selected ? "#1b3850" : C.panel);
-      ctx.strokeStyle = selected ? C.blue : C.line;
-      ctx.lineWidth = selected ? 2 : 1;
-      ctx.strokeRect(rightX + 6, y, rightW - 12, rowH - 4);
-
-      rect(rightX + 12, y + 8, 4, rowH - 20, s.color);
-
-      const labelX = rightX + 22;
-      const availableTextW = Math.max(40, rightW - 35);
-
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(labelX, y + 1, availableTextW, rowH - 5);
-      ctx.clip();
-
-      text(`${s.id}. ${s.name}`, labelX, y + 11, 11, C.white);
-      text(
-        owned ? "購入済み" : `${s.cost} GOLD`,
-        labelX, y + 27, 10,
-        owned ? C.green : C.gold
-      );
-      ctx.restore();
-    }
+    ctx.strokeStyle = shopTab === 1 ? C.blue : C.line;
+    ctx.strokeRect(rightX, panelY, colW, panelH);
 
     text(
-      "↓ さらに下に購入できるアイテム・ステージがあります ↓",
-      W / 2, H - 37, 11, C.orange, "center"
+      `${shopTab === 0 ? "> " : ""}ITEMS`,
+      leftX + colW / 2,
+      panelY + 22,
+      16,
+      shopTab === 0 ? C.gold : C.white,
+      "center"
     );
-    text("クリックで選択・購入 / ホイールで一覧をスクロール / ESCで戻る",
-      W / 2, H - 16, 9, C.muted, "center");
+
+    text(
+      `${shopTab === 1 ? "> " : ""}STAGES`,
+      rightX + colW / 2,
+      panelY + 22,
+      16,
+      shopTab === 1 ? C.gold : C.white,
+      "center"
+    );
+
+    const rowStart = panelY + 58;
+    const rowGap = Math.min(64, (panelH - 75) / 7);
+
+    const items = ITEM_DEFS.map(item => {
+      const level = upgrades[item.key];
+      const cost = item.base * (level + 1);
+
+      return {
+        kind: "item",
+        label: `${item.label} Lv.${level}/${item.max}`,
+        detail: level >= item.max
+          ? "MAX LEVEL"
+          : `${item.detail(level + 1)} | COST ${cost}G`,
+        cost,
+        maxed: level >= item.max
+      };
+    });
+
+    items.push({
+      kind: "back",
+      label: "BACK TO TITLE",
+      detail: "RETURN TO MAIN MENU"
+    });
+
+    const stages = [];
+
+    for (let n = 1; n <= 7; n++) {
+      const unlocked = unlockedStages.has(n);
+
+      stages.push({
+        kind: "stage",
+        stage: n,
+        label: `STAGE ${n} ${unlocked ? "- OWNED" : "- LOCKED"}`,
+        detail: `FIRST REWARD: ${STAGE_REWARDS[n]} GOLD${
+          n === 1
+            ? " | FREE"
+            : unlocked
+              ? " | PLAY FREE"
+              : ` | COST ${STAGE_COSTS[n]}G`
+        }`,
+        unlocked,
+        cost: STAGE_COSTS[n]
+      });
+    }
+
+    stages.push({
+      kind: "back",
+      label: "BACK TO TITLE",
+      detail: "RETURN TO MAIN MENU"
+    });
+
+    const activeRows = shopTab === 0 ? items : stages;
+    const selected = clamp(menuIndex, 0, activeRows.length - 1);
+    const visibleCount = 6;
+
+    const scrollStart = Math.max(
+      0,
+      Math.min(
+        activeRows.length - visibleCount,
+        selected - visibleCount + 1
+      )
+    );
+
+    activeRows.slice(
+      scrollStart,
+      scrollStart + visibleCount
+    ).forEach((item, visibleIndex) => {
+      const actualIndex = scrollStart + visibleIndex;
+      const x = shopTab === 0 ? leftX : rightX;
+      const y = rowStart + visibleIndex * rowGap;
+
+      const selectedRow =
+        shopTab === (
+          item.kind === "item" ||
+          (item.kind === "back" && activeRows === items)
+            ? 0
+            : 1
+        ) &&
+        selected === actualIndex;
+
+      const disabled =
+        item.maxed ||
+        (
+          item.kind === "stage" &&
+          !item.unlocked &&
+          gold < item.cost
+        );
+
+      rect(
+        x + 7,
+        y - 16,
+        colW - 14,
+        31,
+        selectedRow ? "#1b3850" : "#0c1926"
+      );
+
+      ctx.strokeStyle = selectedRow ? C.blue : C.line;
+      ctx.strokeRect(x + 7, y - 16, colW - 14, 31);
+
+      text(
+        `${selectedRow ? "> " : ""}${item.label}`,
+        x + colW / 2,
+        y - 5,
+        Math.min(11, colW * 0.035),
+        disabled ? C.muted : C.white,
+        "center"
+      );
+
+      text(
+        item.detail,
+        x + colW / 2,
+        y + 15,
+        Math.min(9, colW * 0.029),
+        disabled ? C.orange : C.muted,
+        "center"
+      );
+    });
 
     if (messageTimer > 0 && shopMessage) {
-      text(shopMessage, W / 2, H - 68, 11, C.orange, "center");
-    }
-  }
-
-  function drawBattle() {
-    for (const enemy of enemies) drawEnemy(enemy);
-
-    for (const warning of edgeWarnings) {
-      ctx.save();
-      ctx.globalAlpha = 0.45 + Math.sin(performance.now() / 80) * 0.25;
-      ctx.fillStyle = C.orange;
-      ctx.beginPath();
-      ctx.arc(warning.x, warning.y, 6, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
+      text(shopMessage, W / 2, H * 0.88, 12, C.orange, "center");
     }
 
-    for (const bullet of bullets) drawBullet(bullet);
-
-    for (const p of particles) {
-      ctx.globalAlpha = clamp(p.life / 0.35, 0, 1);
-      rect(p.x, p.y, 3, 3, p.color);
-      ctx.globalAlpha = 1;
-    }
-
-    drawPlayer();
-
-    text(`STAGE ${stage}`, 14, 20, 13);
-    text(`TIME ${elapsed.toFixed(1)}s`, 14, 40, 11, C.muted);
-    text(`GOLD ${gold}`, W - 14, 20, 13, C.gold, "right");
     text(
-      `HP ${"♥".repeat(Math.max(0, player.lives))}${"♡".repeat(Math.max(0, player.maxLives - player.lives))}`,
-      14, 60, 13, C.pink
+      "LEFT / RIGHT: SWITCH PANEL   UP / DOWN: SELECT   SPACE / ENTER: BUY / PLAY",
+      W / 2,
+      H * 0.95,
+      Math.min(11, W * 0.014),
+      C.muted,
+      "center"
     );
-    text("MOVE: WASD / ARROWS   ESC: PAUSE", W / 2, H - 12, 10, C.muted, "center");
+  }
 
-    if (hitFlash > 0) {
-      ctx.fillStyle = `rgba(255,50,80,${hitFlash * 0.4})`;
-      ctx.fillRect(0, 0, W, H);
+  function drawAdminCode() {
+    text("ADMIN ACCESS", W / 2, H * 0.25, 27, C.gold, "center");
+    text("TYPE ACCESS CODE THEN PRESS ENTER", W / 2, H * 0.36, 12, C.muted, "center");
+
+    rect(W / 2 - 150, H * 0.43, 300, 48, C.panel);
+    ctx.strokeStyle = C.blue;
+    ctx.strokeRect(W / 2 - 150, H * 0.43, 300, 48);
+
+    text(
+      "*".repeat(adminInput.length),
+      W / 2,
+      H * 0.43 + 24,
+      22,
+      C.white,
+      "center"
+    );
+
+    text("BACKSPACE: DELETE   ESC: SHOP", W / 2, H * 0.58, 12, C.muted, "center");
+    text("ENTER: CONFIRM", W / 2, H * 0.64, 12, C.muted, "center");
+
+    if (messageTimer > 0 && shopMessage) {
+      text(shopMessage, W / 2, H * 0.76, 13, C.orange, "center");
     }
   }
 
-  function drawGameOver() {
-    text("GAME OVER", W / 2, H * 0.25, 32, C.pink, "center");
-    text(`生存時間 ${elapsed.toFixed(1)} 秒`, W / 2, H * 0.36, 14, C.white, "center");
-    text(`GOLD ${gold}`, W / 2, H * 0.43, 14, C.gold, "center");
+  function drawAdminPanel() {
+    text("ADMIN PANEL", W / 2, H * 0.2, 30, C.gold, "center");
+    text(`CURRENT GOLD: ${gold}`, W / 2, H * 0.31, 18, C.white, "center");
 
-    drawButton("もう一度", W / 2, H * 0.56, menuIndex === 0);
-    drawButton("ショップへ", W / 2, H * 0.67, menuIndex === 1);
-    drawButton("タイトルへ", W / 2, H * 0.78, menuIndex === 2);
+    drawButton("ADD 100 GOLD  [1]", W / 2, H * 0.45, false, Math.min(W - 40, 340), 42);
+    drawButton("ADD 1,000 GOLD  [2]", W / 2, H * 0.56, false, Math.min(W - 40, 340), 42);
+    drawButton("ADD 10,000 GOLD  [3]", W / 2, H * 0.67, false, Math.min(W - 40, 340), 42);
+    drawButton("BACK TO SHOP  [ESC]", W / 2, H * 0.79, false, Math.min(W - 40, 340), 42);
+
+    text("Press 1, 2, or 3 to add GOLD", W / 2, H * 0.9, 12, C.muted, "center");
   }
 
   function drawPause() {
     text("PAUSED", W / 2, H * 0.3, 30, C.white, "center");
-    drawButton("再開", W / 2, H * 0.45, menuIndex === 0);
-    drawButton("ショップへ", W / 2, H * 0.57, menuIndex === 1);
+
+    drawButton("RESUME", W / 2, H * 0.45, menuIndex === 0);
+
+    drawButton(
+      "GIVE UP - GO TO SHOP",
+      W / 2,
+      H * 0.56,
+      menuIndex === 1,
+      Math.min(W - 30, 340)
+    );
+
+    text(
+      "UP / DOWN: SELECT   SPACE: CONFIRM",
+      W / 2,
+      H * 0.69,
+      12,
+      C.muted,
+      "center"
+    );
   }
 
-  function drawAdminCode() {
-    text("ADMIN ACCESS", W / 2, H * 0.3, 26, C.purple, "center");
-    text("コードを入力してEnter", W / 2, H * 0.4, 13, C.muted, "center");
-    text("*".repeat(adminInput.length), W / 2, H * 0.5, 24, C.white, "center");
+  function drawGameOver() {
+    text("GAME OVER", W / 2, H * 0.26, 32, C.pink, "center");
+
+    text(
+      `SURVIVED ${elapsed.toFixed(1)}s`,
+      W / 2,
+      H * 0.35,
+      15,
+      C.white,
+      "center"
+    );
+
+    text(
+      `GOLD: ${gold} (+${runGold})`,
+      W / 2,
+      H * 0.42,
+      15,
+      C.gold,
+      "center"
+    );
+
+    drawButton("RETRY", W / 2, H * 0.55, menuIndex === 0);
+
+    drawButton(
+      "GO TO SHOP",
+      W / 2,
+      H * 0.65,
+      menuIndex === 1
+    );
+
+    text(
+      "UP / DOWN: SELECT   SPACE: CONFIRM",
+      W / 2,
+      H * 0.78,
+      12,
+      C.muted,
+      "center"
+    );
   }
 
-  function drawAdminPanel() {
-    text("ADMIN PANEL", W / 2, H * 0.2, 28, C.gold, "center");
-    text(`GOLD: ${gold}`, W / 2, H * 0.31, 17, C.white, "center");
-    drawButton("100 GOLD追加 [1]", W / 2, H * 0.45, false);
-    drawButton("1,000 GOLD追加 [2]", W / 2, H * 0.56, false);
-    drawButton("10,000 GOLD追加 [3]", W / 2, H * 0.67, false);
-    drawButton("ショップへ [ESC]", W / 2, H * 0.79, false);
+  function drawBattle() {
+    text(`STAGE ${stage}`, 18, 22, 15, C.white);
+    text(`GOLD ${gold}`, W - 18, 22, 15, C.gold, "right");
+
+    text(
+      `HP ${"♥".repeat(Math.max(0, player.lives))}`,
+      18,
+      45,
+      14,
+      C.pink
+    );
+
+    text(
+      `TIME ${elapsed.toFixed(1)}s`,
+      W / 2,
+      23,
+      14,
+      C.white,
+      "center"
+    );
+
+    text(
+      `BULLET x${bulletSpeedMultiplier.toFixed(2)}`,
+      W / 2,
+      44,
+      11,
+      C.orange,
+      "center"
+    );
+
+    if (stage === 6 && enemies[0]) {
+      const e = enemies[0];
+      const length = Math.min(W, H) * 0.43;
+      const bx = Math.cos(rotatingBarAngle) * length;
+      const by = Math.sin(rotatingBarAngle) * length;
+
+      ctx.strokeStyle = C.orange;
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.moveTo(e.x - bx, e.y - by);
+      ctx.lineTo(e.x + bx, e.y + by);
+      ctx.stroke();
+
+      for (let t = -1; t <= 1; t += 0.12) {
+        rect(
+          e.x + bx * t - 3,
+          e.y + by * t - 3,
+          6,
+          6,
+          C.orange
+        );
+      }
+
+      if (stage6Warning > 0) {
+        ctx.strokeStyle = C.red;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(
+          e.x,
+          e.y,
+          Math.min(W, H) * 0.42,
+          0,
+          Math.PI * 2
+        );
+        ctx.stroke();
+
+        text("WIDE ATTACK!", W / 2, H * 0.13, 13, C.red, "center");
+      }
+    }
+
+    enemies.forEach((enemy, i) => drawEnemy(enemy, i));
+
+    for (const warning of edgeWarnings) {
+      if (warning.life > 0) {
+        ctx.globalAlpha =
+          Math.floor(performance.now() / 100) % 2 ? 0.8 : 0.3;
+
+        rect(
+          warning.x - 7,
+          warning.y - 7,
+          14,
+          14,
+          C.orange
+        );
+
+        ctx.globalAlpha = 1;
+      }
+    }
+
+    bullets.forEach(drawBullet);
+
+    particles.forEach(p => {
+      rect(p.x, p.y, 3, 3, p.color);
+    });
+
+    drawPlayer();
   }
 
   function draw() {
-    if (mode === "auth") return;
-
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     drawBackground();
 
-    if (mode === "title") drawTitle();
-    else if (mode === "stageSelect") drawStageSelect();
-    else if (mode === "shop") drawShop();
-    else if (mode === "playing") drawBattle();
-    else if (mode === "pause") drawPause();
-    else if (mode === "gameover") drawGameOver();
-    else if (mode === "adminCode") drawAdminCode();
-    else if (mode === "adminPanel") drawAdminPanel();
+    if (mode === "title") {
+      drawTitle();
+      return;
+    }
+
+    if (mode === "stageSelect") {
+      drawStageSelect();
+      return;
+    }
+
+    if (mode === "shop") {
+      drawShop();
+      return;
+    }
+
+    if (mode === "adminCode") {
+      drawAdminCode();
+      return;
+    }
+
+    if (mode === "adminPanel") {
+      drawAdminPanel();
+      return;
+    }
+
+    drawBattle();
+
+    if (mode === "pause") {
+      ctx.globalAlpha = 0.8;
+      rect(0, 0, W, H, "#020812");
+      ctx.globalAlpha = 1;
+      drawPause();
+    }
+
+    if (mode === "gameover") {
+      ctx.globalAlpha = 0.85;
+      rect(0, 0, W, H, "#020812");
+      ctx.globalAlpha = 1;
+      drawGameOver();
+    }
+
+    if (hitFlash > 0 && mode === "playing") {
+      ctx.globalAlpha = hitFlash * 1.5;
+      rect(0, 0, W, H, C.red);
+      ctx.globalAlpha = 1;
+    }
   }
 
-  // ============================================================
-  // 購入処理
-  // ============================================================
-
-  function buyStage(s) {
-    if (unlockedStages.has(s)) {
-      startRun(s);
-      return;
+  function menuLength() {
+    if (mode === "title") return 2;
+    if (mode === "stageSelect") return 8;
+    if (mode === "shop") {
+      return shopTab === 0 ? ITEM_DEFS.length + 1 : 8;
     }
-
-    const info = STAGES.find(x => x.id === s);
-    if (!info) return;
-
-    if (gold < info.cost) {
-      showMessage(`${info.cost} GOLD必要です`);
-      return;
-    }
-
-    gold -= info.cost;
-    unlockedStages.add(s);
-    saveUserProgress();
-    showMessage(`ステージ${s}を購入しました！`);
+    if (mode === "pause") return 2;
+    if (mode === "gameover") return 2;
+    return 0;
   }
 
-  function buyUpgrade(id) {
-    const level = upgrades[id];
-    const costs = UPGRADE_COSTS[id];
-
-    if (level >= costs.length) {
-      showMessage("すでに最大レベルです");
+  function moveMenu(direction) {
+    if (mode === "shop") {
+      const length = shopTab === 0 ? ITEM_DEFS.length + 1 : 8;
+      menuIndex = (menuIndex + direction + length) % length;
       return;
     }
 
-    const cost = costs[level];
-    if (gold < cost) {
-      showMessage(`${cost} GOLD必要です`);
-      return;
-    }
+    const length = menuLength();
+    if (!length) return;
 
-    gold -= cost;
-    upgrades[id]++;
-    saveUserProgress();
-    showMessage("アップグレード成功！");
-  }
-
-  function shopActivate(index) {
-    if (index < UPGRADE_ITEMS.length) {
-      buyUpgrade(UPGRADE_ITEMS[index].id);
-      return;
-    }
-
-    const s = STAGES[index - UPGRADE_ITEMS.length];
-    if (s) buyStage(s.id);
+    menuIndex = (menuIndex + direction + length) % length;
   }
 
   function confirmMenu() {
     if (mode === "title") {
       if (menuIndex === 0) {
-        mode = "stageSelect";
-        menuIndex = 0;
-        shopScroll = 0;
-      } else if (menuIndex === 1) {
-        mode = "shop";
-        menuIndex = 0;
-        shopScroll = 0;
+        showStageSelect();
       } else {
-        logout();
+        openShop();
       }
       return;
     }
 
     if (mode === "stageSelect") {
-      const s = STAGES[menuIndex];
-      if (s) {
-        if (unlockedStages.has(s.id)) startRun(s.id);
-        else {
-          mode = "shop";
-          menuIndex = UPGRADE_ITEMS.length + menuIndex;
-          shopScroll = Math.max(0, menuIndex - UPGRADE_ITEMS.length);
+      if (menuIndex >= 0 && menuIndex <= 6) {
+        const selectedStage = menuIndex + 1;
+
+        if (unlockedStages.has(selectedStage)) {
+          startRun(selectedStage);
+        } else {
+          openShop();
+          shopTab = 1;
+          menuIndex = selectedStage - 1;
+          shopMessage = `STAGE ${selectedStage} を購入してね`;
+          messageTimer = 3;
         }
+      } else {
+        showTitle();
       }
+
       return;
     }
 
     if (mode === "shop") {
-      shopActivate(menuIndex);
+      const activeItems = shopTab === 0
+        ? ITEM_DEFS
+        : Array.from(
+            { length: 7 },
+            (_, i) => ({ stage: i + 1 })
+          ).concat([{ back: true }]);
+
+      const chosen = activeItems[menuIndex];
+      if (!chosen) return;
+
+      if (shopTab === 0) {
+        if (menuIndex === ITEM_DEFS.length) {
+          showTitle();
+          return;
+        }
+
+        const item = ITEM_DEFS[menuIndex];
+        const level = upgrades[item.key];
+
+        if (level >= item.max) {
+          shopMessage = "MAX LEVEL!";
+          messageTimer = 2;
+          return;
+        }
+
+        const cost = item.base * (level + 1);
+
+        if (gold < cost) {
+          shopMessage = `GOLDが足りない！ あと${cost - gold} GOLD必要`;
+          messageTimer = 3;
+          return;
+        }
+
+        gold -= cost;
+        upgrades[item.key]++;
+
+        if (item.key === "speed") {
+          player.speed = 310 * (1 + upgrades.speed * 0.15);
+        }
+
+        shopMessage = `${item.label}: ${item.detail(upgrades[item.key])}`;
+        messageTimer = 2.5;
+      } else {
+        if (menuIndex === 7) {
+          showTitle();
+          return;
+        }
+
+        const selectedStage = menuIndex + 1;
+
+        if (unlockedStages.has(selectedStage)) {
+          startRun(selectedStage);
+          return;
+        }
+
+        const cost = STAGE_COSTS[selectedStage];
+
+        if (gold < cost) {
+          shopMessage = `GOLDが足りない！ あと${cost - gold} GOLD必要`;
+          messageTimer = 3;
+          return;
+        }
+
+        gold -= cost;
+        unlockedStages.add(selectedStage);
+        shopMessage = `STAGE ${selectedStage} UNLOCKED!`;
+        messageTimer = 2.5;
+      }
+
       return;
     }
 
     if (mode === "pause") {
-      if (menuIndex === 0) mode = "playing";
-      else {
-        mode = "shop";
-        menuIndex = 0;
+      if (menuIndex === 0) {
+        mode = "playing";
+      } else {
+        bullets = [];
+        edgeWarnings = [];
+        openShop();
       }
       return;
     }
 
     if (mode === "gameover") {
-      if (menuIndex === 0) startRun(stage);
-      else if (menuIndex === 1) {
-        mode = "shop";
-        menuIndex = 0;
-      } else showTitle();
-      return;
-    }
-
-    if (mode === "adminPanel") {
-      if (menuIndex === 0) gold += 100;
-      else if (menuIndex === 1) gold += 1000;
-      else if (menuIndex === 2) gold += 10000;
-      else mode = "shop";
-
-      saveUserProgress();
-    }
-  }
-
-  function moveMenu(direction) {
-    if (mode === "title") {
-      menuIndex = clamp(menuIndex + direction, 0, 2);
-    } else if (mode === "stageSelect") {
-      menuIndex = clamp(menuIndex + direction, 0, STAGES.length - 1);
-      const visibleRows = Math.max(1, Math.floor((H - 160) / Math.min(53, (H - 145) / 6)));
-      shopScroll = clamp(menuIndex - visibleRows + 1, 0, STAGES.length - visibleRows);
-    } else if (mode === "shop") {
-      menuIndex = clamp(menuIndex + direction, 0, UPGRADE_ITEMS.length + STAGES.length - 1);
-
-      if (menuIndex >= UPGRADE_ITEMS.length) {
-        const stageIndex = menuIndex - UPGRADE_ITEMS.length;
-        const visibleRows = Math.max(1, Math.floor((H - 150) / 43));
-        shopScroll = clamp(stageIndex - visibleRows + 1, 0, STAGES.length - visibleRows);
+      if (menuIndex === 0) {
+        startRun(stage);
+      } else {
+        openShop();
       }
-    } else if (mode === "pause") {
-      menuIndex = clamp(menuIndex + direction, 0, 1);
-    } else if (mode === "gameover") {
-      menuIndex = clamp(menuIndex + direction, 0, 2);
-    } else if (mode === "adminPanel") {
-      menuIndex = clamp(menuIndex + direction, 0, 3);
     }
   }
 
-  // ============================================================
-  // キーボード・マウス・タッチ
-  // ============================================================
-
-  window.addEventListener("keydown", e => {
-    if (e.code.startsWith("Arrow") || e.code === "Space") e.preventDefault();
-    keys.add(e.code);
-
-    if (e.ctrlKey && e.shiftKey && e.code === "Digit5") {
-      mode = "adminCode";
+  function handleEscape() {
+    if (mode === "adminCode" || mode === "adminPanel") {
       adminInput = "";
+      openShop();
+    } else if (mode === "playing") {
+      mode = "pause";
+      menuIndex = 0;
+    } else if (mode === "pause") {
+      mode = "playing";
+    } else if (mode === "shop") {
+      showTitle();
+    } else if (mode === "stageSelect") {
+      showTitle();
+    } else if (mode === "gameover") {
+      openShop();
+    }
+  }
+
+  function keyDown(e) {
+    if (
+      mode === "shop" &&
+      e.ctrlKey &&
+      e.shiftKey &&
+      e.code === "Digit5"
+    ) {
+      e.preventDefault();
+      adminInput = "";
+      shopMessage = "";
+      mode = "adminCode";
       return;
     }
-
-    if (mode === "auth") return;
 
     if (mode === "adminCode") {
+      e.preventDefault();
+
       if (e.code === "Escape") {
-        mode = "shop";
-        return;
-      }
-      if (e.code === "Backspace") {
+        handleEscape();
+      } else if (e.code === "Backspace") {
         adminInput = adminInput.slice(0, -1);
-        return;
-      }
-      if (e.code === "Enter") {
+      } else if (
+        e.code === "Enter" ||
+        e.code === "NumpadEnter"
+      ) {
         if (adminInput === ADMIN_CODE) {
-          mode = "adminPanel";
-          menuIndex = 0;
-          showMessage("管理者アクセス成功");
-        } else {
-          showMessage("コードが違います");
           adminInput = "";
+          shopMessage = "";
+          mode = "adminPanel";
+        } else {
+          adminInput = "";
+          shopMessage = "CODE NOT ACCEPTED";
+          messageTimer = 2;
         }
-        return;
+      } else if (
+        e.key &&
+        e.key.length === 1 &&
+        adminInput.length < 24
+      ) {
+        adminInput += e.key;
       }
-      if (e.key && e.key.length === 1) adminInput += e.key;
+
       return;
     }
 
     if (mode === "adminPanel") {
-      if (e.code === "Escape") mode = "shop";
-      else if (e.code === "Digit1") gold += 100;
-      else if (e.code === "Digit2") gold += 1000;
-      else if (e.code === "Digit3") gold += 10000;
-      saveUserProgress();
+      e.preventDefault();
+
+      if (e.code === "Escape") {
+        handleEscape();
+      } else if (
+        e.code === "Digit1" ||
+        e.code === "Numpad1"
+      ) {
+        addGold(100);
+      } else if (
+        e.code === "Digit2" ||
+        e.code === "Numpad2"
+      ) {
+        addGold(1000);
+      } else if (
+        e.code === "Digit3" ||
+        e.code === "Numpad3"
+      ) {
+        addGold(10000);
+      }
+
       return;
     }
 
-    if (mode === "playing") {
-      if (e.code === "Escape") {
-        mode = "pause";
-        menuIndex = 0;
-      }
-      return;
+    const menuKeys = [
+      "ArrowUp",
+      "ArrowDown",
+      "ArrowLeft",
+      "ArrowRight",
+      "Space",
+      "Escape",
+      "Enter"
+    ];
+
+    if (menuKeys.includes(e.code)) {
+      e.preventDefault();
     }
+
+    if (e.repeat && mode !== "playing") return;
+
+    keys.add(e.code);
 
     if (e.code === "Escape") {
-      if (mode === "shop" || mode === "stageSelect") showTitle();
-      else if (mode === "pause") mode = "playing";
-      else if (mode === "gameover") showTitle();
+      handleEscape();
       return;
     }
 
-    if (e.code === "ArrowUp" || e.code === "ArrowLeft") moveMenu(-1);
-    else if (e.code === "ArrowDown" || e.code === "ArrowRight") moveMenu(1);
-    else if (e.code === "Enter" || e.code === "Space") confirmMenu();
-  });
+    if (mode === "playing") return;
 
-  window.addEventListener("keyup", e => keys.delete(e.code));
-
-  canvas.addEventListener("wheel", e => {
-    if (mode !== "shop" && mode !== "stageSelect") return;
-    e.preventDefault();
-
-    const delta = e.deltaY > 0 ? 1 : -1;
-
-    if (mode === "shop") {
-      const stageStart = UPGRADE_ITEMS.length;
-      if (menuIndex >= stageStart) {
-        shopScroll = clamp(shopScroll + delta, 0, STAGES.length - 1);
-        menuIndex = stageStart + shopScroll;
-      }
-    } else {
-      shopScroll = clamp(shopScroll + delta, 0, STAGES.length - 1);
-      menuIndex = shopScroll;
-    }
-  }, { passive: false });
-
-  canvas.addEventListener("pointerdown", e => {
-    if (mode === "auth") return;
-
-    const bounds = canvas.getBoundingClientRect();
-    const x = e.clientX - bounds.left;
-    const y = e.clientY - bounds.top;
-
-    if (mode === "playing") {
-      mode = "pause";
+    if (
+      mode === "shop" &&
+      (
+        e.code === "ArrowLeft" ||
+        e.code === "ArrowRight"
+      )
+    ) {
+      shopTab = e.code === "ArrowLeft" ? 0 : 1;
       menuIndex = 0;
       return;
     }
 
-    if (mode === "title") {
-      if (y > H * 0.45 && y < H * 0.61) menuIndex = 0;
-      else if (y >= H * 0.61 && y < H * 0.72) menuIndex = 1;
-      else if (y >= H * 0.72 && y < H * 0.85) menuIndex = 2;
-      else return;
-
-      confirmMenu();
+    if (e.code === "ArrowUp") {
+      moveMenu(-1);
       return;
     }
 
-    if (mode === "shop") {
-      const top = 54;
-      const bottom = H - 55;
-      const availableH = bottom - top;
-      const leftW = W * 0.43 - 12;
-      const rightX = W * 0.45;
-      const rightW = W - rightX - 12;
-
-      if (x < 12 + leftW && y >= top + 47 && y <= bottom) {
-        const itemH = Math.min(83, (availableH - 55) / UPGRADE_ITEMS.length);
-        const index = Math.floor((y - (top + 47)) / itemH);
-        if (index >= 0 && index < UPGRADE_ITEMS.length) {
-          menuIndex = index;
-          shopActivate(index);
-        }
-        return;
-      }
-
-      if (x >= rightX && x <= rightX + rightW && y >= top + 44 && y <= bottom) {
-        const rowH = 43;
-        const row = Math.floor((y - (top + 44)) / rowH);
-        const visibleRows = Math.max(1, Math.floor((availableH - 49) / rowH));
-        const stageIndex = row + shopScroll;
-
-        if (row >= 0 && row < visibleRows && stageIndex < STAGES.length) {
-          menuIndex = UPGRADE_ITEMS.length + stageIndex;
-          shopActivate(menuIndex);
-        }
-      }
+    if (e.code === "ArrowDown") {
+      moveMenu(1);
       return;
     }
 
-    if (mode === "stageSelect") {
-      const gap = Math.min(53, (H - 145) / 6);
-      const index = Math.round((y - 105) / gap) + shopScroll;
-      if (index >= 0 && index < STAGES.length) {
-        menuIndex = index;
-        confirmMenu();
-      }
+    if (e.code === "ArrowLeft") {
+      moveMenu(-1);
       return;
     }
 
-    if (mode === "pause") {
-      menuIndex = Math.abs(y - H * 0.45) < 30 ? 0 : 1;
-      confirmMenu();
+    if (e.code === "ArrowRight") {
+      moveMenu(1);
       return;
     }
 
-    if (mode === "gameover") {
-      if (Math.abs(y - H * 0.56) < 25) menuIndex = 0;
-      else if (Math.abs(y - H * 0.67) < 25) menuIndex = 1;
-      else if (Math.abs(y - H * 0.78) < 25) menuIndex = 2;
-      else return;
+    if (e.code === "Space" || e.code === "Enter") {
       confirmMenu();
     }
-  });
+  }
+
+  function keyUp(e) {
+    keys.delete(e.code);
+  }
+
+  window.addEventListener("keydown", keyDown, { passive: false });
+  window.addEventListener("keyup", keyUp);
 
   document.querySelectorAll("[data-dir]").forEach(button => {
     const dir = button.dataset.dir;
@@ -1427,53 +1922,146 @@
     button.addEventListener("lostpointercapture", up);
   });
 
-  const touchStart = document.getElementById("touch-start");
   if (touchStart) {
     touchStart.addEventListener("click", () => {
       if (mode === "playing") return;
-      if (mode === "pause") mode = "playing";
-      else if (mode === "title") {
-        mode = "stageSelect";
-        menuIndex = 0;
-      } else confirmMenu();
+
+      if (mode === "pause") {
+        mode = "playing";
+      } else if (mode === "title") {
+        showStageSelect();
+      } else if (mode === "gameover") {
+        openShop();
+      } else if (mode === "stageSelect") {
+        confirmMenu();
+      } else if (mode === "shop") {
+        confirmMenu();
+      }
     });
   }
 
-  // ============================================================
-  // ゲームループと起動
-  // ============================================================
+  canvas.addEventListener("pointerdown", e => {
+    const rect = canvas.getBoundingClientRect();
 
-  function loop(timestamp) {
-    if (!lastTime) lastTime = timestamp;
-    const dt = Math.min((timestamp - lastTime) / 1000, 0.04);
-    lastTime = timestamp;
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    if (mode === "playing") {
+      mode = "pause";
+      menuIndex = 0;
+      return;
+    }
+
+    if (mode === "pause" || mode === "gameover") {
+      const buttons = mode === "pause"
+        ? [
+            { index: 0, y: H * 0.45 },
+            { index: 1, y: H * 0.56 }
+          ]
+        : [
+            { index: 0, y: H * 0.55 },
+            { index: 1, y: H * 0.65 }
+          ];
+
+      const chosen = buttons.find(b =>
+        Math.abs(y - b.y) < 28 &&
+        Math.abs(x - W / 2) < Math.min(W * 0.45, 210)
+      );
+
+      if (chosen) {
+        menuIndex = chosen.index;
+        confirmMenu();
+      }
+
+      return;
+    }
+
+    if (mode === "title") {
+      if (y > H * 0.45 && y < H * 0.6) {
+        menuIndex = 0;
+        confirmMenu();
+      } else if (y >= H * 0.6 && y < H * 0.75) {
+        menuIndex = 1;
+        confirmMenu();
+      }
+
+      return;
+    }
+
+    if (mode === "stageSelect") {
+      const startY = H * 0.25;
+      const gap = Math.min(47, H * 0.083);
+      const visible = 7;
+
+      const offset = Math.max(
+        0,
+        Math.min(8 - visible, menuIndex - visible + 1)
+      );
+
+      const index = Math.round((y - startY) / gap) + offset;
+
+      if (index >= 0 && index < 8) {
+        menuIndex = index;
+        confirmMenu();
+      }
+
+      return;
+    }
+
+    if (mode === "shop") {
+      const panelY = H * 0.22;
+      const panelH = H * 0.62;
+      const margin = 16;
+      const colW = (W - margin * 2 - 18) / 2;
+      const rightX = margin + colW + 18;
+
+      if (y < panelY || y > panelY + panelH) return;
+
+      const nextTab = x < rightX ? 0 : 1;
+
+      if (nextTab !== shopTab) {
+        shopTab = nextTab;
+        menuIndex = 0;
+      }
+
+      const rowStart = panelY + 58;
+      const rowGap = Math.min(64, (panelH - 75) / 7);
+      const visibleIndex = Math.round((y - rowStart) / rowGap);
+      const total = shopTab === 0 ? ITEM_DEFS.length + 1 : 8;
+      const selected = clamp(menuIndex, 0, total - 1);
+
+      const scrollStart = Math.max(
+        0,
+        Math.min(total - 6, selected - 5)
+      );
+
+      const actualIndex = scrollStart + visibleIndex;
+
+      if (
+        visibleIndex >= 0 &&
+        visibleIndex < Math.min(6, total) &&
+        actualIndex < total
+      ) {
+        menuIndex = actualIndex;
+        confirmMenu();
+      }
+    }
+  });
+
+  function frame(now) {
+    const dt = Math.min(
+      0.035,
+      (now - (lastTime || now)) / 1000
+    );
+
+    lastTime = now;
 
     update(dt);
     draw();
-    requestAnimationFrame(loop);
+
+    requestAnimationFrame(frame);
   }
 
   resize();
-
-  // 前回ログインしていたユーザーを確認する
-  try {
-    const savedUsername = localStorage.getItem(SESSION_KEY);
-    const accounts = readAccounts();
-
-    if (savedUsername && accounts[savedUsername]) {
-      currentUser = savedUsername;
-      loadUserProgress(accounts[savedUsername]);
-      showTitle();
-    } else {
-      currentUser = null;
-      mode = "auth";
-      makeAuthScreen();
-    }
-  } catch {
-    currentUser = null;
-    mode = "auth";
-    makeAuthScreen();
-  }
-
-  requestAnimationFrame(loop);
+  requestAnimationFrame(frame);
 })();
