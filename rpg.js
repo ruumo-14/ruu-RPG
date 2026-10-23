@@ -87,19 +87,19 @@
   const STAGES = [
     { id: 1, cost: 0, reward: 1, name: "はじまりのステージ", color: "#ff6575" },
     { id: 2, cost: 50, reward: 3, name: "エッジアタック", color: "#a78bfa" },
-    { id: 3, cost: 100, reward: 7, name: "スパイラル", color: "#78e0ae" },
-    { id: 4, cost: 200, reward: 15, name: "レインストーム", color: "#ffad55" },
-    { id: 5, cost: 350, reward: 30, name: "ウェーブ", color: "#ff6575" },
-    { id: 6, cost: 500, reward: 50, name: "回転バー", color: "#75c9ff" },
-    { id: 7, cost: 800, reward: 100, name: "カオス", color: "#a78bfa" },
-    { id: 8, cost: 1300, reward: 160, name: "深淵の門", color: "#ff465e" },
-    { id: 9, cost: 2200, reward: 260, name: "星屑の嵐", color: "#75c9ff" },
-    { id: 10, cost: 3600, reward: 420, name: "紫電回廊", color: "#a78bfa" },
-    { id: 11, cost: 5800, reward: 680, name: "灼熱地獄", color: "#ffad55" },
-    { id: 12, cost: 9000, reward: 1050, name: "無限螺旋", color: "#78e0ae" },
-    { id: 13, cost: 14000, reward: 1650, name: "終焉の雨", color: "#ff6575" },
-    { id: 14, cost: 22000, reward: 2600, name: "虚空の王", color: "#a78bfa" },
-    { id: 15, cost: 35000, reward: 4200, name: "ラスト・カオス", color: "#ffd166" }
+    { id: 3, cost: 150, reward: 7, name: "スパイラル", color: "#78e0ae" },
+    { id: 4, cost: 400, reward: 15, name: "レインストーム", color: "#ffad55" },
+    { id: 5, cost: 1200, reward: 30, name: "ウェーブ", color: "#ff6575" },
+    { id: 6, cost: 3300, reward: 50, name: "回転バー", color: "#75c9ff" },
+    { id: 7, cost: 9000, reward: 100, name: "カオス", color: "#a78bfa" },
+    { id: 8, cost: 25000, reward: 160, name: "深淵の門", color: "#ff465e" },
+    { id: 9, cost: 70000, reward: 260, name: "星屑の嵐", color: "#75c9ff" },
+    { id: 10, cost: 190000, reward: 420, name: "紫電回廊", color: "#a78bfa" },
+    { id: 11, cost: 520000, reward: 680, name: "灼熱地獄", color: "#ffad55" },
+    { id: 12, cost: 1400000, reward: 1050, name: "無限螺旋", color: "#78e0ae" },
+    { id: 13, cost: 3800000, reward: 1650, name: "終焉の雨", color: "#ff6575" },
+    { id: 14, cost: 10000000, reward: 2600, name: "虚空の王", color: "#a78bfa" },
+    { id: 15, cost: 28000000, reward: 4200, name: "ラスト・カオス", color: "#ffd166" }
   ];
 
   const unlockedStages = new Set([1]);
@@ -689,7 +689,8 @@
     // 倍率は新しく発射される弾にだけ適用される。
     const speedTier = Math.floor(elapsed / 30);
     bulletSpeedMultiplier = Math.pow(1.5, speedTier);
-    bulletCountBonus = speedTier * 2;
+    // 30秒ごとに弾速だけでなく、弾数・攻撃密度も増やす。
+    bulletCountBonus = Math.min(48, speedTier * 3);
 
     player.invuln = Math.max(0, player.invuln - dt);
     hitFlash = Math.max(0, hitFlash - dt);
@@ -931,30 +932,41 @@
       }
     }
 
-    // ステージ6：30秒ごとに加速する回転バー＋四隅の狙い撃ち
+    // ステージ6：回転バーは30秒ごとに3回だけ加速し、その速度を維持。
+    // 90秒以降はバーを加速させず、中央から出る弾幕を増やして難易度を上げる。
     if (stage === 6) {
-      // 30秒経過するごとに回転速度を上げる
-      const speedLevel = Math.floor(elapsed / 30);
+      const speedLevel = Math.min(3, Math.floor(elapsed / 30));
       const rotationSpeed = 1.15 + speedLevel * 0.35;
-
       stage6Angle += dt * rotationSpeed;
 
-      // 中央から全方位に弾を発射
+      const lateTier = Math.max(0, Math.floor((elapsed - 90) / 30));
       stage6BurstTimer -= dt;
 
       if (stage6BurstTimer <= 0) {
         radialShot(
           enemies[0],
-          24 + Math.min(16, speedLevel * 2),
-          175 + speedLevel * 12,
-          patternTick * 0.13,
+          24 + speedLevel * 4 + Math.min(36, lateTier * 4),
+          175 + speedLevel * 12 + Math.min(90, lateTier * 8),
+          patternTick * (0.13 + lateTier * 0.025),
           C.blue
         );
 
-        stage6BurstTimer = Math.max(1.4, rand(3.2, 4.5) - speedLevel * 0.15);
+        stage6BurstTimer = Math.max(
+          0.65,
+          rand(3.2, 4.5) - speedLevel * 0.15 - lateTier * 0.22
+        );
+
+        if (lateTier > 0 && Math.random() < Math.min(0.8, 0.2 + lateTier * 0.12)) {
+          radialShot(
+            enemies[0],
+            12 + Math.min(24, lateTier * 3),
+            190 + Math.min(70, lateTier * 7),
+            patternTick * -0.18,
+            C.purple
+          );
+        }
       }
 
-      // 四隅の敵がプレイヤーを狙い撃ちする
       for (let i = 1; i <= 4; i++) {
         shotTimers[i] -= dt;
 
@@ -964,40 +976,131 @@
             185 + Math.min(100, elapsed * 1.4),
             i % 2 === 0 ? C.orange : C.pink
           );
-
-          // 時間経過で連射間隔も短くなる
-          shotTimers[i] = Math.max(0.38, 1.15 - elapsed * 0.006);
+          shotTimers[i] = Math.max(0.28, 1.15 - elapsed * 0.006);
+          if (speedLevel >= 1) {
+            fanShot(enemies[i], 3 + Math.min(9, speedLevel * 2 + lateTier), 0.35, 150 + speedLevel * 15, C.orange);
+          }
         }
       }
     }
 
-    // ステージ7：高密度の扇形・放射攻撃
+    // ステージ7〜15：各ステージで主攻撃を変え、30秒ごとに弾数と頻度も増加。
     if (stage >= 7) {
       const boss = enemies[0];
+      const tier = Math.floor(elapsed / 30);
+      const color = STAGES[stage - 1]?.color || C.pink;
       shotTimers[0] -= dt;
       radialTimers[0] -= dt;
-
-      if (shotTimers[0] <= 0) {
-        fanShot(
-          boss, 13 + stage, 1.9, 175 + stage * 10,
-          STAGES[stage - 1]?.color || C.pink
-        );
-        shotTimers[0] = 0.42;
-      }
-
-          if (radialTimers[0] <= 0) {
-        radialShot(
-          boss, 22 + stage * 2, 160 + stage * 10,
-          patternTick * 0.7, C.purple
-        );
-        radialTimers[0] = 1.15;
-      }
-
       edgeTimer -= dt;
 
-      if (edgeTimer <= 0) {
+      if (stage === 7) {
+        // 扇形を左右交互に撃つ
+        if (shotTimers[0] <= 0) {
+          fanShot(boss, 13 + tier * 3, 1.9, 175 + stage * 10, color);
+          shotTimers[0] = Math.max(0.2, 0.58 - tier * 0.035);
+        }
+        if (radialTimers[0] <= 0) {
+          radialShot(boss, 18 + tier * 4, 155 + tier * 8, patternTick * 0.8, C.purple);
+          radialTimers[0] = Math.max(0.65, 2.2 - tier * 0.12);
+        }
+      } else if (stage === 8) {
+        // 十字状の4方向レーザー弾幕
+        if (shotTimers[0] <= 0) {
+          const offset = Math.floor(patternTick * 1.4) % 2 ? Math.PI / 4 : 0;
+          radialShot(boss, 4 + tier * 2, 220 + tier * 12, offset, C.red);
+          shotTimers[0] = Math.max(0.28, 0.9 - tier * 0.04);
+        }
+        if (radialTimers[0] <= 0) {
+          fanShot(boss, 9 + tier * 3, Math.PI * 0.8, 180 + tier * 10, C.orange);
+          radialTimers[0] = Math.max(0.7, 2.5 - tier * 0.12);
+        }
+      } else if (stage === 9) {
+        // 星型の放射弾＋狙い撃ち
+        if (shotTimers[0] <= 0) {
+          radialShot(boss, 10 + tier * 3, 195 + tier * 10, patternTick * 0.55, C.blue);
+          shotTimers[0] = Math.max(0.32, 0.95 - tier * 0.035);
+        }
+        if (radialTimers[0] <= 0) {
+          aimedShot(boss, 220 + tier * 14, C.pink);
+          radialTimers[0] = Math.max(0.35, 1.5 - tier * 0.08);
+        }
+      } else if (stage === 10) {
+        // 画面上部から斜めに降る電撃雨
+        if (shotTimers[0] <= 0) {
+          rainShot(7 + tier * 4, 205 + tier * 12);
+          shotTimers[0] = Math.max(0.18, 0.72 - tier * 0.035);
+        }
+        if (radialTimers[0] <= 0) {
+          fanShot(boss, 7 + tier * 2, 1.1, 200 + tier * 10, C.blue);
+          radialTimers[0] = Math.max(0.55, 1.8 - tier * 0.08);
+        }
+      } else if (stage === 11) {
+        // 炎の二重リング
+        if (shotTimers[0] <= 0) {
+          radialShot(boss, 20 + tier * 5, 145 + tier * 10, patternTick * 0.35, C.orange);
+          shotTimers[0] = Math.max(0.35, 1.1 - tier * 0.04);
+        }
+        if (radialTimers[0] <= 0) {
+          radialShot(boss, 12 + tier * 3, 230 + tier * 10, -patternTick * 0.55, C.red);
+          radialTimers[0] = Math.max(0.65, 2.1 - tier * 0.09);
+        }
+      } else if (stage === 12) {
+        // 回転する螺旋状の複数扇
+        if (shotTimers[0] <= 0) {
+          fanShot(boss, 12 + tier * 3, 2.4, 165 + tier * 12, color);
+          fanShot(boss, 12 + tier * 3, 2.4, 165 + tier * 12, color);
+          shotTimers[0] = Math.max(0.22, 0.82 - tier * 0.04);
+        }
+        if (radialTimers[0] <= 0) {
+          radialShot(boss, 16 + tier * 4, 155 + tier * 10, -patternTick * 0.65, C.green);
+          radialTimers[0] = Math.max(0.6, 1.9 - tier * 0.08);
+        }
+      } else if (stage === 13) {
+        // 大量の弾が降る終焉の雨
+        if (shotTimers[0] <= 0) {
+          rainShot(12 + tier * 5, 230 + tier * 14);
+          shotTimers[0] = Math.max(0.12, 0.5 - tier * 0.025);
+        }
+        if (radialTimers[0] <= 0) {
+          aimedShot(boss, 230 + tier * 14, C.pink);
+          radialTimers[0] = Math.max(0.28, 1.1 - tier * 0.06);
+        }
+      } else if (stage === 14) {
+        // 画面端からの連続襲撃＋中央から狙い撃ち
+        if (shotTimers[0] <= 0) {
+          aimedShot(boss, 230 + tier * 14, C.purple);
+          fanShot(boss, 5 + tier * 2, 0.8, 190 + tier * 12, C.purple);
+          shotTimers[0] = Math.max(0.22, 0.7 - tier * 0.035);
+        }
+        if (edgeTimer <= 0) {
+          edgeAttack();
+          edgeTimer = Math.max(0.25, rand(0.9, 1.3) - tier * 0.04);
+        }
+        if (radialTimers[0] <= 0) {
+          radialShot(boss, 18 + tier * 4, 180 + tier * 12, patternTick * 0.9, C.red);
+          radialTimers[0] = Math.max(0.45, 1.6 - tier * 0.08);
+        }
+      } else {
+        // Stage 15：扇・放射・雨・画面端攻撃を混ぜる最終弾幕
+        if (shotTimers[0] <= 0) {
+          fanShot(boss, 16 + tier * 4, 2.2, 205 + tier * 12, C.gold);
+          rainShot(8 + tier * 4, 220 + tier * 14);
+          shotTimers[0] = Math.max(0.15, 0.52 - tier * 0.025);
+        }
+        if (radialTimers[0] <= 0) {
+          radialShot(boss, 24 + tier * 5, 190 + tier * 12, patternTick, C.purple);
+          radialTimers[0] = Math.max(0.4, 1.25 - tier * 0.06);
+        }
+        if (edgeTimer <= 0) {
+          edgeAttack();
+          edgeTimer = Math.max(0.22, rand(0.65, 0.95) - tier * 0.03);
+        }
+      }
+
+      // ステージ7〜13も時間経過で画面端攻撃が増え、後半ほど逃げ場を狭める。
+      if (stage >= 7 && stage <= 13 && edgeTimer <= 0) {
         edgeAttack();
-        edgeTimer = rand(0.55, 1.0);
+        edgeTimer = Math.max(0.35, rand(1.1, 1.7) - tier * 0.06);
       }
     }
 
