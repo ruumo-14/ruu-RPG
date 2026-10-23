@@ -16,12 +16,16 @@
   let gold = 0, runGold = 0, elapsed = 0;
   let goldTimer = 0, edgeTimer = 2, patternTick = 0;
   let bulletSpeedMultiplier = 1;
+  let bulletCountBonus = 0;
+  let reviveUsed = false;
+  let pulseTimer = 0;
   let stage4SwitchTimer = 0, stage4RainTimer = 0, stage4Direction = 0;
   let stage5WaveTimer = 0, stage5SafeY = 0, stage6Angle = 0, stage6BurstTimer = 0;
   let hitFlash = 0, healTimer = 0, guardTimer = 0;
   let menuIndex = 0;
   let shopMessage = "", messageTimer = 0;
   let shopScroll = 0;
+  let upgradeScroll = 0;
   let adminInput = "";
   const ADMIN_CODE = "O0p-@^";
 
@@ -60,7 +64,11 @@
     bulletSlow: 0,
     goldBonus: 0,
     guard: 0,
-    regen: 0
+    regen: 0,
+    fortune: 0,
+    revive: 0,
+    startingShield: 0,
+    bulletPulse: 0
   };
 
   const UPGRADE_COSTS = {
@@ -69,7 +77,11 @@
     bulletSlow: [65, 95, 130, 170],
     goldBonus: [80, 120, 170, 230],
     guard: [70, 105, 150],
-    regen: [100, 150, 220]
+    regen: [100, 150, 220],
+    fortune: [1500, 3500, 8000],
+    revive: [6000],
+    startingShield: [1800, 4000, 9000],
+    bulletPulse: [2500, 6000, 12000]
   };
 
   const STAGES = [
@@ -79,7 +91,15 @@
     { id: 4, cost: 200, reward: 15, name: "レインストーム", color: "#ffad55" },
     { id: 5, cost: 350, reward: 30, name: "ウェーブ", color: "#ff6575" },
     { id: 6, cost: 500, reward: 50, name: "回転バー", color: "#75c9ff" },
-    { id: 7, cost: 800, reward: 100, name: "カオス", color: "#a78bfa" }
+    { id: 7, cost: 800, reward: 100, name: "カオス", color: "#a78bfa" },
+    { id: 8, cost: 1300, reward: 160, name: "深淵の門", color: "#ff465e" },
+    { id: 9, cost: 2200, reward: 260, name: "星屑の嵐", color: "#75c9ff" },
+    { id: 10, cost: 3600, reward: 420, name: "紫電回廊", color: "#a78bfa" },
+    { id: 11, cost: 5800, reward: 680, name: "灼熱地獄", color: "#ffad55" },
+    { id: 12, cost: 9000, reward: 1050, name: "無限螺旋", color: "#78e0ae" },
+    { id: 13, cost: 14000, reward: 1650, name: "終焉の雨", color: "#ff6575" },
+    { id: 14, cost: 22000, reward: 2600, name: "虚空の王", color: "#a78bfa" },
+    { id: 15, cost: 35000, reward: 4200, name: "ラスト・カオス", color: "#ffd166" }
   ];
 
   const unlockedStages = new Set([1]);
@@ -311,8 +331,13 @@
               bulletSlow: 0,
               goldBonus: 0,
               guard: 0,
-              regen: 0
-            }
+              regen: 0,
+              fortune: 0,
+              revive: 0,
+              startingShield: 0,
+              bulletPulse: 0
+            },
+            banned: false
           };
 
           saveAccounts(accounts);
@@ -323,6 +348,10 @@
           ) {
             message.textContent =
               "ユーザーネームまたはパスワードが違います。";
+            return;
+          }
+          if (accounts[username].banned) {
+            message.textContent = "このアカウントはBANされています。";
             return;
           }
         }
@@ -363,7 +392,11 @@
       bulletSlow: Number(old.bulletSlow) || 0,
       goldBonus: Number(old.goldBonus) || 0,
       guard: Number(old.guard) || 0,
-      regen: Number(old.regen) || 0
+      regen: Number(old.regen) || 0,
+      fortune: Number(old.fortune) || 0,
+      revive: Number(old.revive) || 0,
+      startingShield: Number(old.startingShield) || 0,
+      bulletPulse: Number(old.bulletPulse) || 0
     });
   }
 
@@ -431,6 +464,7 @@
       Math.round(
         amount *
         (1 + upgrades.goldBonus * 0.25) *
+        (1 + upgrades.fortune * 0.5) *
         Math.pow(2, goldTier)
       )
     );
@@ -490,6 +524,9 @@
     elapsed = 0;
     goldTimer = 0;
     bulletSpeedMultiplier = 1;
+    bulletCountBonus = 0;
+    reviveUsed = false;
+    pulseTimer = 0;
     runGold = 0;
     hitFlash = 0;
     healTimer = 0;
@@ -511,7 +548,7 @@
 
     player.maxLives = 3 + upgrades.hearts;
     player.lives = player.maxLives;
-    player.invuln = 1.5;
+    player.invuln = 1.5 + upgrades.startingShield * 1.5;
 
     resetPlayer();
     positionEnemies();
@@ -553,6 +590,7 @@
   }
 
   function radialShot(enemy, count, speed, offset = 0, color = C.pink) {
+    count = Math.min(120, count + bulletCountBonus);
     for (let i = 0; i < count; i++) {
       const angle = offset + i * Math.PI * 2 / count;
       fire(
@@ -562,7 +600,63 @@
     }
   }
 
+  function fanShot(enemy, count, spread, speed, color = C.purple) {
+    count = Math.min(100, count + bulletCountBonus);
+    const base = Math.atan2(
+      player.y - enemy.y,
+      player.x - enemy.x
+    );
+
+    for (let i = 0; i < count; i++) {
+      const t = count <= 1 ? 0.5 : i / (count - 1);
+      const angle = base - spread / 2 + spread * t;
+      fire(enemy.x, enemy.y, angle, speed, color);
+    }
+  }
+
+  function rainShot(count, speed) {
+    for (let i = 0; i < count; i++) {
+      const x = rand(18, W - 18);
+      const y = -rand(10, H * 0.3);
+      fire(x, y, Math.PI / 2 + rand(-0.16, 0.16), speed, C.orange, 3.5);
+    }
+  }
+
+  function edgeAttack() {
+    const count = Math.random() < 0.45 ? 3 : 2;
+
+    for (let i = 0; i < count; i++) {
+      const side = Math.floor(Math.random() * 4);
+      let x, y, angle;
+
+      if (side === 0) {
+        x = rand(0, W);
+        y = -8;
+        angle = Math.atan2(player.y - y, player.x - x);
+      } else if (side === 1) {
+        x = W + 8;
+        y = rand(0, H);
+        angle = Math.atan2(player.y - y, player.x - x);
+      } else if (side === 2) {
+        x = rand(0, W);
+        y = H + 8;
+        angle = Math.atan2(player.y - y, player.x - x);
+      } else {
+        x = -8;
+        y = rand(0, H);
+        angle = Math.atan2(player.y - y, player.x - x);
+      }
+
+      fire(x, y, angle + rand(-0.22, 0.22), 170 + elapsed * 0.4, C.purple, 4);
+      if (Math.random() < 0.75) {
+        fire(x, y, angle + rand(-0.48, 0.48), 150 + elapsed * 0.35, C.orange, 3.5);
+      }
+    }
+  }
+    }
+
   function fanShot(enemy, count, spread, speed, color = C.orange) {
+    count = Math.min(100, count + bulletCountBonus);
     const base = Math.atan2(
       player.y - enemy.y,
       player.x - enemy.x
@@ -607,9 +701,13 @@
   }
 
   function edgeAttack() {
-    const count = stage === 2
-      ? Math.floor(rand(1, 3))
-      : Math.floor(rand(2, Math.min(6, stage + 2)));
+    const count = Math.min(
+      12,
+      (stage === 2
+        ? Math.floor(rand(1, 3))
+        : Math.floor(rand(2, Math.min(6, stage + 2)))) +
+        Math.floor(elapsed / 30)
+    );
 
     for (let i = 0; i < count; i++) {
       const delay = stage === 2 ? i * rand(0.35, 0.75) : i * 0.2;
@@ -638,6 +736,7 @@
     // 倍率は新しく発射される弾にだけ適用される。
     const speedTier = Math.floor(elapsed / 30);
     bulletSpeedMultiplier = Math.pow(1.5, speedTier);
+    bulletCountBonus = speedTier * 2;
 
     player.invuln = Math.max(0, player.invuln - dt);
     hitFlash = Math.max(0, hitFlash - dt);
@@ -762,7 +861,7 @@
           const base =
             patternTick * (i === 1 ? -1 : 1) * 1.35 + i * 0.7;
 
-          for (let n = 0; n < 3; n++) {
+          for (let n = 0; n < 3 + Math.floor(elapsed / 30); n++) {
             const a = base + n * Math.PI * 2 / 3;
             fire(e.x, e.y, a, 145, C.green);
           }
@@ -793,7 +892,7 @@
       }
 
       if (stage4RainTimer <= 0) {
-        const n = Math.floor(rand(5, 10));
+        const n = Math.min(45, Math.floor(rand(5, 10)) + bulletCountBonus);
 
         for (let i = 0; i < n; i++) {
           let x, y, angle;
@@ -830,7 +929,7 @@
 
       if (stage5WaveTimer <= 0) {
         stage5SafeY = rand(H * 0.18, H * 0.82);
-        const spacing = 30;
+        const spacing = Math.max(12, 30 - Math.floor(elapsed / 30) * 2);
 
         for (let y = 55; y < H - 25; y += spacing) {
           if (Math.abs(y - stage5SafeY) < 52) continue;
@@ -954,7 +1053,8 @@
       warning.life -= dt;
 
       if (warning.life <= 0 && !warning.fired) {
-        warning.fired = true;
+
+              warning.fired = true;
 
         const count = stage === 2 ? 7 : 5 + stage * 2;
         const spread = stage === 2 ? 0.2 : 0.14;
@@ -1017,7 +1117,14 @@
           });
         }
 
-        if (player.lives <= 0) {
+        if (player.lives <= 0 && upgrades.revive > 0 && !reviveUsed) {
+          reviveUsed = true;
+          player.lives = 1;
+          player.invuln = 2.5;
+          bullets = [];
+          edgeWarnings = [];
+          showMessage("リバイブ発動！");
+        } else if (player.lives <= 0) {
           mode = "gameover";
           menuIndex = 0;
           bullets = [];
@@ -1050,7 +1157,14 @@
         player.invuln = 1.15 + upgrades.guard * 0.35;
         hitFlash = 0.2;
 
-        if (player.lives <= 0) {
+        if (player.lives <= 0 && upgrades.revive > 0 && !reviveUsed) {
+          reviveUsed = true;
+          player.lives = 1;
+          player.invuln = 2.5;
+          bullets = [];
+          edgeWarnings = [];
+          showMessage("リバイブ発動！");
+        } else if (player.lives <= 0) {
           mode = "gameover";
           menuIndex = 0;
           bullets = [];
@@ -1090,6 +1204,18 @@
       }
     } else {
       healTimer = 0;
+    }
+
+    // 高額アップグレード：一定時間ごとに画面上の敵弾を消す
+    if (upgrades.bulletPulse > 0) {
+      pulseTimer += dt;
+      const pulseInterval = Math.max(18, 60 - upgrades.bulletPulse * 14);
+      if (pulseTimer >= pulseInterval) {
+        pulseTimer = 0;
+        bullets = [];
+        edgeWarnings = [];
+        showMessage("BULLET PULSE 発動！");
+      }
     }
 
     goldTimer += dt;
@@ -1227,7 +1353,7 @@
       menuIndex === 3, Math.min(W - 40, 260), 36
     );
 
-    text(`ユーザー: ${currentUser || "未ログイン"}`, 16, 20, 12, C.muted);
+    text(`ユーザー: ${currentUser || "未ログイン"}  |  Ctrl+Shift+5: 管理者`, 16, 20, 12, C.muted);
     text(`GOLD ${gold}`, W - 18, 22, 15, C.gold, "right");
   }
 
@@ -1299,11 +1425,35 @@
           : `${intervals[level]}秒ごとにHP回復`;
       },
       color: C.green
+    },
+    {
+      id: "fortune",
+      name: "LATE-GAME FORTUNE",
+      desc: level => `獲得GOLD +${level * 50}%`,
+      color: C.gold
+    },
+    {
+      id: "revive",
+      name: "ONE-TIME REVIVE",
+      desc: level => level ? "1ランにつき1回だけ復活" : "死亡時にHP1で復活",
+      color: C.pink
+    },
+    {
+      id: "startingShield",
+      name: "START SHIELD",
+      desc: level => `開始時の無敵 +${(level * 1.5).toFixed(1)}秒`,
+      color: C.blue
+    },
+    {
+      id: "bulletPulse",
+      name: "BULLET PULSE",
+      desc: level => level ? `${Math.max(18, 60 - level * 14)}秒ごとに敵弾消去` : "一定時間ごとに敵弾を消去",
+      color: C.purple
     }
   ];
 
   function drawShop() {
-    const margin = 12;
+
     const top = 54;
     const bottom = H - 55;
     const availableH = bottom - top;
@@ -1319,42 +1469,39 @@
     ctx.strokeRect(leftX, top, leftW, availableH);
     text("アイテム・強化", leftX + leftW / 2, top + 19, 14, C.blue, "center");
 
-    const itemTop = top + 47;
-    const itemH = Math.min(83, (availableH - 55) / UPGRADE_ITEMS.length);
+    const itemTop = top + 44;
+    const itemH = 48;
+    const visibleUpgradeRows = Math.max(1, Math.floor((availableH - 50) / itemH));
+    upgradeScroll = clamp(upgradeScroll, 0, Math.max(0, UPGRADE_ITEMS.length - visibleUpgradeRows));
 
-    for (let i = 0; i < UPGRADE_ITEMS.length; i++) {
+    for (let row = 0; row < visibleUpgradeRows; row++) {
+      const i = row + upgradeScroll;
       const item = UPGRADE_ITEMS[i];
-      const y = itemTop + i * itemH;
+      if (!item) continue;
+      const y = itemTop + row * itemH;
       const level = upgrades[item.id];
       const costs = UPGRADE_COSTS[item.id];
       const maxed = level >= costs.length;
       const cost = maxed ? null : costs[level];
 
-      rect(leftX + 7, y, leftW - 14, itemH - 6, C.panel);
+      rect(leftX + 7, y, leftW - 14, itemH - 4, C.panel);
 
       ctx.strokeStyle = menuIndex === i ? C.blue : C.line;
       ctx.lineWidth = menuIndex === i ? 2 : 1;
-      ctx.strokeRect(leftX + 7, y, leftW - 14, itemH - 6);
+      ctx.strokeRect(leftX + 7, y, leftW - 14, itemH - 4);
+      rect(leftX + 14, y + 7, 4, itemH - 18, item.color);
 
-      rect(leftX + 14, y + 10, 5, itemH - 26, item.color);
-
-      const textX = leftX + 27;
-      const maxTextW = Math.max(50, leftW - 43);
-
+      const textX = leftX + 24;
+      const maxTextW = Math.max(50, leftW - 38);
       ctx.save();
       ctx.beginPath();
-      ctx.rect(textX, y + 1, maxTextW, itemH - 8);
+      ctx.rect(textX, y + 1, maxTextW, itemH - 5);
       ctx.clip();
 
-      text(item.name, textX, y + 17, 12, C.white);
-      text(`Lv. ${level}/${costs.length}`, textX, y + 35, 11, C.muted);
-      text(
-        maxed ? "MAX" : `${cost} GOLD`,
-        textX, y + 52, 11,
-        maxed ? C.green : C.gold
-      );
-      text(item.desc(level), textX, y + 66, 9, C.muted);
-
+      text(item.name, textX, y + 9, 10, C.white);
+      text(`Lv. ${level}/${costs.length}  ·  ${maxed ? "MAX" : `${cost}G`}`,
+        textX, y + 22, 10, maxed ? C.green : C.gold);
+      text(item.desc(level), textX, y + 35, 8, C.muted);
       ctx.restore();
     }
 
@@ -1545,13 +1692,93 @@
   }
 
   function drawAdminPanel() {
-    text("管理者パネル", W / 2, H * 0.2, 28, C.gold, "center");
-    text(`所持GOLD：${gold}`, W / 2, H * 0.31, 17, C.white, "center");
+    text("管理者コマンドパネル", W / 2, 35, 24, C.gold, "center");
+    text("このブラウザに保存されたアカウントだけを管理します", W / 2, 63, 11, C.muted, "center");
+    rect(18, 88, W - 36, 56, C.panel);
+    ctx.strokeStyle = C.blue;
+    ctx.strokeRect(18, 88, W - 36, 56);
+    text(`> ${adminInput || "help"}`, 30, 116, 14, C.white);
 
-    drawButton("100 GOLD追加 [1]", W / 2, H * 0.45, menuIndex === 0);
-    drawButton("1,000 GOLD追加 [2]", W / 2, H * 0.56, menuIndex === 1);
-    drawButton("10,000 GOLD追加 [3]", W / 2, H * 0.67, menuIndex === 2);
-    drawButton("ショップへ [ESC / Enter]", W / 2, H * 0.79, menuIndex === 3);
+    text("コマンド例：list / ban ユーザー名 / unban ユーザー名", 24, 170, 12, C.blue);
+    text("delete ユーザー名 / gold ユーザー名 数量 / exit", 24, 193, 12, C.blue);
+
+    const accounts = readAccounts();
+    const names = Object.keys(accounts);
+    text(`登録アカウント数：${names.length}`, 24, 230, 13, C.gold);
+    const visible = Math.min(names.length, 8);
+    for (let i = 0; i < visible; i++) {
+      const name = names[i];
+      const acc = accounts[name];
+      text(`${name}  |  ${acc.banned ? "BAN中" : "有効"}  |  GOLD ${Number(acc.gold) || 0}`,
+        28, 260 + i * 24, 12, acc.banned ? C.pink : C.white);
+    }
+    if (names.length === 0) text("アカウントがありません", 28, 260, 12, C.muted);
+    if (messageTimer > 0 && shopMessage) {
+      text(shopMessage, W / 2, H - 28, 12, C.orange, "center");
+    }
+    text("Enter：実行 / Backspace：削除 / Esc：終了", W / 2, H - 8, 10, C.muted, "center");
+  }
+
+  function runAdminCommand(raw) {
+    const parts = raw.trim().split(/\\s+/);
+    const command = (parts.shift() || "").toLowerCase();
+    const accounts = readAccounts();
+
+    if (!command || command === "help") {
+      showMessage("list / ban name / unban name / delete name / gold name amount / exit");
+      return;
+    }
+    if (command === "exit") {
+      mode = "shop";
+      adminInput = "";
+      return;
+    }
+    if (command === "list") {
+      showMessage(`登録アカウント数：${Object.keys(accounts).length}`);
+      return;
+    }
+
+    const target = parts[0];
+    if (!target || !accounts[target]) {
+      showMessage("対象ユーザーが見つかりません");
+      return;
+    }
+
+    if (command === "ban") {
+      if (target === currentUser) {
+        showMessage("ログイン中の管理者自身はBANできません");
+        return;
+      }
+      accounts[target].banned = true;
+      saveAccounts(accounts);
+      showMessage(`${target} をBANしました`);
+    } else if (command === "unban") {
+      accounts[target].banned = false;
+      saveAccounts(accounts);
+      showMessage(`${target} のBANを解除しました`);
+    } else if (command === "delete") {
+      if (target === currentUser) {
+        showMessage("ログイン中の管理者自身は削除できません");
+        return;
+      }
+      delete accounts[target];
+      saveAccounts(accounts);
+      showMessage(`${target} のアカウントを削除しました`);
+    } else if (command === "gold") {
+      const amount = Number(parts[1]);
+      if (!Number.isFinite(amount) || amount < 0 || amount > 100000000) {
+        showMessage("数量は0〜100000000の数値にしてください");
+        return;
+      }
+      accounts[target].gold = Math.floor(amount);
+      if (target === currentUser) gold = Math.floor(amount);
+      saveAccounts(accounts);
+      if (target === currentUser) saveUserProgress();
+      showMessage(`${target} のGOLDを ${Math.floor(amount)} に設定しました`);
+    } else {
+      showMessage("不明なコマンドです。help と入力してください");
+      return;
+    }
   }
 
   function draw() {
@@ -1627,7 +1854,8 @@
 
   function confirmMenu() {
     if (mode === "title") {
-      if (menuIndex === 0) {
+
+          if (menuIndex === 0) {
         mode = "stageSelect";
         menuIndex = 0;
         shopScroll = 0;
@@ -1635,6 +1863,7 @@
         mode = "shop";
         menuIndex = 0;
         shopScroll = 0;
+        upgradeScroll = 0;
       } else {
         logout();
       }
@@ -1719,11 +1948,17 @@
       if (menuIndex >= UPGRADE_ITEMS.length) {
         const stageIndex = menuIndex - UPGRADE_ITEMS.length;
         const visibleRows = Math.max(1, Math.floor((H - 150) / 43));
-
         shopScroll = clamp(
           stageIndex - visibleRows + 1,
           0,
-          STAGES.length - visibleRows
+          Math.max(0, STAGES.length - visibleRows)
+        );
+      } else {
+        const visibleUpgradeRows = Math.max(1, Math.floor((H - 109 - 50) / 48));
+        upgradeScroll = clamp(
+          menuIndex - visibleUpgradeRows + 1,
+          0,
+          Math.max(0, UPGRADE_ITEMS.length - visibleUpgradeRows)
         );
       }
     } else if (mode === "pause") {
@@ -1787,21 +2022,22 @@
     if (mode === "adminPanel") {
       if (e.code === "Escape") {
         mode = "shop";
-      } else if (e.code === "Digit1") {
-        gold += 100;
-      } else if (e.code === "Digit2") {
-        gold += 1000;
-      } else if (e.code === "Digit3") {
-        gold += 10000;
-      } else if (e.code === "ArrowUp" || e.code === "ArrowLeft") {
-        moveMenu(-1);
-      } else if (e.code === "ArrowDown" || e.code === "ArrowRight") {
-        moveMenu(1);
-      } else if (e.code === "Enter" || e.code === "Space") {
-        confirmMenu();
+        adminInput = "";
+        return;
       }
-
-      saveUserProgress();
+      if (e.code === "Backspace") {
+        adminInput = adminInput.slice(0, -1);
+        return;
+      }
+      if (e.code === "Enter") {
+        const command = adminInput;
+        adminInput = "";
+        runAdminCommand(command);
+        return;
+      }
+      if (e.key && e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
+        adminInput += e.key;
+      }
       return;
     }
 
@@ -1855,14 +2091,24 @@
     const delta = e.deltaY > 0 ? 1 : -1;
 
     if (mode === "shop") {
-      const stageStart = UPGRADE_ITEMS.length;
-
-      if (menuIndex >= stageStart) {
-        shopScroll = clamp(shopScroll + delta, 0, STAGES.length - 1);
+      const bounds = canvas.getBoundingClientRect();
+      const pointerX = e.clientX - bounds.left;
+      if (pointerX < W * 0.45) {
+        const availableH = H - 109;
+        const visibleUpgradeRows = Math.max(1, Math.floor((availableH - 50) / 48));
+        upgradeScroll = clamp(
+          upgradeScroll + delta,
+          0,
+          Math.max(0, UPGRADE_ITEMS.length - visibleUpgradeRows)
+        );
+        menuIndex = upgradeScroll;
+      } else {
+        const stageStart = UPGRADE_ITEMS.length;
+        shopScroll = clamp(shopScroll + delta, 0, Math.max(0, STAGES.length - 1));
         menuIndex = stageStart + shopScroll;
       }
     } else {
-      shopScroll = clamp(shopScroll + delta, 0, STAGES.length - 1);
+      shopScroll = clamp(shopScroll + delta, 0, Math.max(0, STAGES.length - 1));
       menuIndex = shopScroll;
     }
   }, { passive: false });
@@ -1903,11 +2149,13 @@
       const rightX = W * 0.45;
       const rightW = W - rightX - 12;
 
-      if (x < 12 + leftW && y >= top + 47 && y <= bottom) {
-        const itemH = Math.min(83, (availableH - 55) / UPGRADE_ITEMS.length);
-        const index = Math.floor((y - (top + 47)) / itemH);
+      if (x < 12 + leftW && y >= top + 44 && y <= bottom) {
+        const itemH = 48;
+        const row = Math.floor((y - (top + 44)) / itemH);
+        const visibleUpgradeRows = Math.max(1, Math.floor((availableH - 50) / itemH));
+        const index = row + upgradeScroll;
 
-        if (index >= 0 && index < UPGRADE_ITEMS.length) {
+        if (row >= 0 && row < visibleUpgradeRows && index < UPGRADE_ITEMS.length) {
           menuIndex = index;
           shopActivate(index);
         }
@@ -2025,7 +2273,7 @@
     const savedUsername = localStorage.getItem(SESSION_KEY);
     const accounts = readAccounts();
 
-    if (savedUsername && accounts[savedUsername]) {
+    if (savedUsername && accounts[savedUsername] && !accounts[savedUsername].banned) {
       currentUser = savedUsername;
       loadUserProgress(accounts[savedUsername]);
       showTitle();
