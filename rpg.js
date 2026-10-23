@@ -497,8 +497,8 @@
         { x: W * 0.75, y: H * 0.34 }
       ];
     } else if (stage === 6) {
-      enemies = [
-        { x: W * 0.5, y: H * 0.5 },
+
+            { x: W * 0.5, y: H * 0.5 },
         { x: 24, y: 24 },
         { x: W - 24, y: 24 },
         { x: 24, y: H - 24 },
@@ -621,39 +621,6 @@
       fire(x, y, Math.PI / 2 + rand(-0.16, 0.16), speed, C.orange, 3.5);
     }
   }
-
-  function edgeAttack() {
-    const count = Math.random() < 0.45 ? 3 : 2;
-
-    for (let i = 0; i < count; i++) {
-      const side = Math.floor(Math.random() * 4);
-      let x, y, angle;
-
-      if (side === 0) {
-        x = rand(0, W);
-        y = -8;
-        angle = Math.atan2(player.y - y, player.x - x);
-      } else if (side === 1) {
-        x = W + 8;
-        y = rand(0, H);
-        angle = Math.atan2(player.y - y, player.x - x);
-      } else if (side === 2) {
-        x = rand(0, W);
-        y = H + 8;
-        angle = Math.atan2(player.y - y, player.x - x);
-      } else {
-        x = -8;
-        y = rand(0, H);
-        angle = Math.atan2(player.y - y, player.x - x);
-      }
-
-      fire(x, y, angle + rand(-0.22, 0.22), 170 + elapsed * 0.4, C.purple, 4);
-      if (Math.random() < 0.75) {
-        fire(x, y, angle + rand(-0.48, 0.48), 150 + elapsed * 0.35, C.orange, 3.5);
-      }
-    }
-  }
-    }
 
   function fanShot(enemy, count, spread, speed, color = C.orange) {
     count = Math.min(100, count + bulletCountBonus);
@@ -1032,7 +999,7 @@
         shotTimers[0] = 0.42;
       }
 
-      if (radialTimers[0] <= 0) {
+          if (radialTimers[0] <= 0) {
         radialShot(
           boss, 22 + stage * 2, 160 + stage * 10,
           patternTick * 0.7, C.purple
@@ -1454,6 +1421,7 @@
 
   function drawShop() {
 
+    const margin = 12;
     const top = 54;
     const bottom = H - 55;
     const availableH = bottom - top;
@@ -1531,7 +1499,7 @@
         selected ? "#1b3850" : C.panel
       );
 
-      ctx.strokeStyle = selected ? C.blue : C.line;
+          ctx.strokeStyle = selected ? C.blue : C.line;
       ctx.lineWidth = selected ? 2 : 1;
       ctx.strokeRect(rightX + 6, y, rightW - 12, rowH - 4);
 
@@ -2030,7 +1998,8 @@
         return;
       }
       if (e.code === "Enter") {
-        const command = adminInput;
+
+              const command = adminInput;
         adminInput = "";
         runAdminCommand(command);
         return;
