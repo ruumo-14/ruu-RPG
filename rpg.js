@@ -497,8 +497,8 @@
         { x: W * 0.75, y: H * 0.34 }
       ];
     } else if (stage === 6) {
-
-            { x: W * 0.5, y: H * 0.5 },
+      enemies = [
+        { x: W * 0.5, y: H * 0.5 },
         { x: 24, y: 24 },
         { x: W - 24, y: 24 },
         { x: 24, y: H - 24 },
@@ -597,20 +597,6 @@
         enemy.x, enemy.y, angle, speed,
         i % 4 === 0 ? C.orange : color
       );
-    }
-  }
-
-  function fanShot(enemy, count, spread, speed, color = C.purple) {
-    count = Math.min(100, count + bulletCountBonus);
-    const base = Math.atan2(
-      player.y - enemy.y,
-      player.x - enemy.x
-    );
-
-    for (let i = 0; i < count; i++) {
-      const t = count <= 1 ? 0.5 : i / (count - 1);
-      const angle = base - spread / 2 + spread * t;
-      fire(enemy.x, enemy.y, angle, speed, color);
     }
   }
 
@@ -1688,7 +1674,7 @@
   }
 
   function runAdminCommand(raw) {
-    const parts = raw.trim().split(/\\s+/);
+    const parts = raw.trim().split(/\s+/);
     const command = (parts.shift() || "").toLowerCase();
     const accounts = readAccounts();
 
