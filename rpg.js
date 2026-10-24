@@ -689,8 +689,10 @@
     // 倍率は新しく発射される弾にだけ適用される。
     const speedTier = Math.floor(elapsed / 30);
     bulletSpeedMultiplier = Math.pow(1.5, speedTier);
-    // 30秒ごとに弾速だけでなく、弾数・攻撃密度も増やす。
+    // 30秒ごとに弾速・弾数・発射頻度を上げる。
     bulletCountBonus = Math.min(48, speedTier * 3);
+    // 30秒ごとに発射頻度を25%ずつ上げる。
+    const attackRateMultiplier = 1 + speedTier * 0.25;
 
     player.invuln = Math.max(0, player.invuln - dt);
     hitFlash = Math.max(0, hitFlash - dt);
@@ -797,7 +799,7 @@
         }
       }
 
-      edgeTimer -= dt;
+      edgeTimer -= dt * attackRateMultiplier;
 
       if (edgeTimer <= 0) {
         edgeAttack();
@@ -838,7 +840,7 @@
     // ステージ4：雨の向きが不定期に上・右・下・左へ切り替わる
     if (stage === 4) {
       stage4SwitchTimer -= dt;
-      stage4RainTimer -= dt;
+      stage4RainTimer -= dt * attackRateMultiplier;
 
       if (stage4SwitchTimer <= 0) {
         stage4Direction = Math.floor(Math.random() * 4);
@@ -879,7 +881,7 @@
 
     // ステージ5：安全地帯が動く左右横断弾幕＋ボスの狙い撃ち
     if (stage === 5) {
-      stage5WaveTimer -= dt;
+      stage5WaveTimer -= dt * attackRateMultiplier;
 
       if (stage5WaveTimer <= 0) {
         stage5SafeY = rand(H * 0.18, H * 0.82);
@@ -940,7 +942,7 @@
       stage6Angle += dt * rotationSpeed;
 
       const lateTier = Math.max(0, Math.floor((elapsed - 90) / 30));
-      stage6BurstTimer -= dt;
+      stage6BurstTimer -= dt * attackRateMultiplier;
 
       if (stage6BurstTimer <= 0) {
         radialShot(
@@ -991,7 +993,7 @@
       const color = STAGES[stage - 1]?.color || C.pink;
       shotTimers[0] -= dt;
       radialTimers[0] -= dt;
-      edgeTimer -= dt;
+      edgeTimer -= dt * attackRateMultiplier;
 
       if (stage === 7) {
         // 扇形を左右交互に撃つ
