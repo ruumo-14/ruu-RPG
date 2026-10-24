@@ -1335,7 +1335,7 @@
       healTimer = 0;
     }
 
-    // 高額アップグレード：一定時間ごとに画面上の敵弾を消す
+    // 高額アップグレード：一定時間ごとに短時間のバリアを付与する
     if (upgrades.bulletPulse > 0) {
       pulseTimer += dt;
       const pulseInterval = Math.max(18, 60 - upgrades.bulletPulse * 14);
