@@ -986,7 +986,7 @@
       }
     }
 
-    // ステージ7〜15：各ステージで主攻撃を変え、30秒ごとに弾数と頻度も増加。
+    // WORLD 1 Stage 7〜15：それぞれ異なるギミックの弾幕。
     if (stage >= 7) {
       const boss = enemies[0];
       const tier = Math.floor(elapsed / 30);
@@ -996,116 +996,140 @@
       edgeTimer -= dt * attackRateMultiplier;
 
       if (stage === 7) {
-        // 扇形を左右交互に撃つ
+        // 7：回転する三本の螺旋アーム。
         if (shotTimers[0] <= 0) {
-          fanShot(boss, 13 + tier * 3, 1.9, 175 + stage * 10, color);
-          shotTimers[0] = Math.max(0.2, 0.58 - tier * 0.035);
+          for (let arm = 0; arm < 3; arm++) {
+            const angle = patternTick * 1.55 + arm * Math.PI * 2 / 3;
+            fire(boss.x, boss.y, angle, 145 + tier * 9, color, 4);
+            fire(boss.x, boss.y, angle + 0.18, 175 + tier * 9, C.purple, 3);
+          }
+          shotTimers[0] = Math.max(0.16, 0.48 - tier * 0.025);
         }
         if (radialTimers[0] <= 0) {
-          radialShot(boss, 18 + tier * 4, 155 + tier * 8, patternTick * 0.8, C.purple);
-          radialTimers[0] = Math.max(0.65, 2.2 - tier * 0.12);
+          radialShot(boss, 12 + tier * 2, 115 + tier * 7, -patternTick * 0.7, C.purple);
+          radialTimers[0] = Math.max(0.9, 2.4 - tier * 0.08);
         }
       } else if (stage === 8) {
-        // 十字状の4方向レーザー弾幕
+        // 8：縦横の十字レーザー弾。一定間隔で斜め十字に切り替わる。
         if (shotTimers[0] <= 0) {
-          const offset = Math.floor(patternTick * 1.4) % 2 ? Math.PI / 4 : 0;
-          radialShot(boss, 4 + tier * 2, 220 + tier * 12, offset, C.red);
-          shotTimers[0] = Math.max(0.28, 0.9 - tier * 0.04);
+          const offset = Math.floor(patternTick / 1.2) % 2 ? Math.PI / 4 : 0;
+          for (let k = 0; k < 4; k++) fire(boss.x, boss.y, offset + k * Math.PI / 2, 235 + tier * 12, C.red, 5);
+          shotTimers[0] = Math.max(0.3, 0.82 - tier * 0.035);
         }
         if (radialTimers[0] <= 0) {
-          fanShot(boss, 9 + tier * 3, Math.PI * 0.8, 180 + tier * 10, C.orange);
-          radialTimers[0] = Math.max(0.7, 2.5 - tier * 0.12);
+          for (let k = 0; k < 8; k++) fire(boss.x, boss.y, Math.PI / 8 + k * Math.PI / 4, 155 + tier * 8, C.orange, 3);
+          radialTimers[0] = Math.max(0.9, 2.3 - tier * 0.08);
         }
       } else if (stage === 9) {
-        // 星型の放射弾＋狙い撃ち
+        // 9：プレイヤーの位置を狙う五連射。弾ごとに狙いを少しずらす。
         if (shotTimers[0] <= 0) {
-          radialShot(boss, 10 + tier * 3, 195 + tier * 10, patternTick * 0.55, C.blue);
-          shotTimers[0] = Math.max(0.32, 0.95 - tier * 0.035);
+          const aim = Math.atan2(player.y - boss.y, player.x - boss.x);
+          for (let k = -2; k <= 2; k++) fire(boss.x, boss.y, aim + k * (0.13 + tier * 0.008), 215 + tier * 12, C.blue, 4);
+          shotTimers[0] = Math.max(0.32, 0.9 - tier * 0.035);
         }
         if (radialTimers[0] <= 0) {
-          aimedShot(boss, 220 + tier * 14, C.pink);
-          radialTimers[0] = Math.max(0.35, 1.5 - tier * 0.08);
+          const aim = Math.atan2(player.y - boss.y, player.x - boss.x);
+          fire(boss.x, boss.y, aim - 0.08, 275 + tier * 12, C.pink, 3);
+          fire(boss.x, boss.y, aim + 0.08, 275 + tier * 12, C.pink, 3);
+          radialTimers[0] = Math.max(0.5, 1.45 - tier * 0.06);
         }
       } else if (stage === 10) {
-        // 画面上部から斜めに降る電撃雨
+        // 10：斜めに降り注ぐ電撃雨。
         if (shotTimers[0] <= 0) {
-          rainShot(7 + tier * 4, 205 + tier * 12);
-          shotTimers[0] = Math.max(0.18, 0.72 - tier * 0.035);
+          const count = Math.min(55, 8 + tier * 4 + bulletCountBonus);
+          for (let i = 0; i < count; i++) {
+            const x = rand(10, W - 10);
+            fire(x, -8, Math.PI / 2 + rand(-0.58, 0.58), 205 + tier * 13, i % 2 ? C.blue : C.purple, 3.5);
+          }
+          shotTimers[0] = Math.max(0.22, 0.72 - tier * 0.03);
         }
         if (radialTimers[0] <= 0) {
-          fanShot(boss, 7 + tier * 2, 1.1, 200 + tier * 10, C.blue);
-          radialTimers[0] = Math.max(0.55, 1.8 - tier * 0.08);
+          for (let i = 0; i < 5 + tier; i++) fire(-8, 65 + i * (H - 100) / (4 + tier), 0.12 + i * 0.015, 185 + tier * 10, C.blue, 3);
+          radialTimers[0] = Math.max(0.65, 1.8 - tier * 0.07);
         }
       } else if (stage === 11) {
-        // 炎の二重リング
+        // 11：内側と外側で回転方向・速度が違う二重リング。
         if (shotTimers[0] <= 0) {
-          radialShot(boss, 20 + tier * 5, 145 + tier * 10, patternTick * 0.35, C.orange);
-          shotTimers[0] = Math.max(0.35, 1.1 - tier * 0.04);
+          radialShot(boss, 22 + tier * 3, 118 + tier * 6, patternTick * 0.42, C.orange);
+          shotTimers[0] = Math.max(0.48, 1.2 - tier * 0.035);
         }
         if (radialTimers[0] <= 0) {
-          radialShot(boss, 12 + tier * 3, 230 + tier * 10, -patternTick * 0.55, C.red);
-          radialTimers[0] = Math.max(0.65, 2.1 - tier * 0.09);
+          radialShot(boss, 14 + tier * 2, 245 + tier * 10, -patternTick * 0.58, C.red);
+          radialTimers[0] = Math.max(0.72, 1.95 - tier * 0.06);
         }
       } else if (stage === 12) {
-        // 回転する螺旋状の複数扇
+        // 12：上下から迫る弾の壁。動く縦の安全地帯を見つける必要がある。
         if (shotTimers[0] <= 0) {
-          fanShot(boss, 12 + tier * 3, 2.4, 165 + tier * 12, color);
-          fanShot(boss, 12 + tier * 3, 2.4, 165 + tier * 12, color);
-          shotTimers[0] = Math.max(0.22, 0.82 - tier * 0.04);
+          const gapX = W * (0.5 + 0.31 * Math.sin(patternTick * 0.72));
+          const gapWidth = Math.max(42, 100 - tier * 5);
+          const spacing = Math.max(16, 31 - tier * 2);
+          for (let x = 12; x < W; x += spacing) {
+            if (Math.abs(x - gapX) < gapWidth) continue;
+            fire(x, -8, Math.PI / 2, 175 + tier * 10, C.green, 4);
+            fire(x, H + 8, -Math.PI / 2, 175 + tier * 10, C.green, 4);
+          }
+          shotTimers[0] = Math.max(0.55, 1.5 - tier * 0.055);
         }
         if (radialTimers[0] <= 0) {
-          radialShot(boss, 16 + tier * 4, 155 + tier * 10, -patternTick * 0.65, C.green);
-          radialTimers[0] = Math.max(0.6, 1.9 - tier * 0.08);
+          const aim = Math.atan2(player.y - boss.y, player.x - boss.x);
+          for (let k = -1; k <= 1; k++) fire(boss.x, boss.y, aim + k * 0.22, 205 + tier * 11, C.green, 4);
+          radialTimers[0] = Math.max(0.65, 1.75 - tier * 0.06);
         }
       } else if (stage === 13) {
-        // 大量の弾が降る終焉の雨
+        // 13：四方からプレイヤーへ収束するクロスファイア。
         if (shotTimers[0] <= 0) {
-          rainShot(12 + tier * 5, 230 + tier * 14);
-          shotTimers[0] = Math.max(0.12, 0.5 - tier * 0.025);
+          const origins = [[12, 52], [W - 12, 52], [12, H * 0.48], [W - 12, H * 0.48]];
+          for (let i = 0; i < origins.length; i++) {
+            const ox = origins[i][0], oy = origins[i][1];
+            const aim = Math.atan2(player.y - oy, player.x - ox);
+            fire(ox, oy, aim - 0.09, 220 + tier * 12, C.pink, 4);
+            fire(ox, oy, aim + 0.09, 220 + tier * 12, C.orange, 4);
+          }
+          shotTimers[0] = Math.max(0.35, 0.95 - tier * 0.035);
         }
         if (radialTimers[0] <= 0) {
-          aimedShot(boss, 230 + tier * 14, C.pink);
-          radialTimers[0] = Math.max(0.28, 1.1 - tier * 0.06);
+          radialShot(boss, 10 + tier * 2, 145 + tier * 8, patternTick * 0.31, C.red);
+          radialTimers[0] = Math.max(0.9, 2.2 - tier * 0.07);
         }
       } else if (stage === 14) {
-        // 画面端からの連続襲撃＋中央から狙い撃ち
+        // 14：四隅からの同時狙撃。逃げる方向を順番にふさぐ。
         if (shotTimers[0] <= 0) {
-          aimedShot(boss, 230 + tier * 14, C.purple);
-          fanShot(boss, 5 + tier * 2, 0.8, 190 + tier * 12, C.purple);
-          shotTimers[0] = Math.max(0.22, 0.7 - tier * 0.035);
+          const corners = [[10, 10], [W - 10, 10], [10, H - 10], [W - 10, H - 10]];
+          for (let i = 0; i < corners.length; i++) {
+            const ox = corners[i][0], oy = corners[i][1];
+            const aim = Math.atan2(player.y - oy, player.x - ox);
+            for (let k = -1; k <= 1; k++) fire(ox, oy, aim + k * 0.11, 230 + tier * 13, C.purple, 4);
+          }
+          shotTimers[0] = Math.max(0.45, 1.05 - tier * 0.04);
+        }
+        if (radialTimers[0] <= 0) {
+          edgeAttack();
+          radialTimers[0] = Math.max(0.8, 2.0 - tier * 0.06);
+        }
+      } else if (stage === 15) {
+        // 15：左右から迫る横壁と回転するダイヤ形の弾幕を交互に重ねる最終攻撃。
+        if (shotTimers[0] <= 0) {
+          const gapY = H * (0.5 + 0.3 * Math.sin(patternTick * 0.9));
+          const gapHeight = Math.max(38, 90 - tier * 4);
+          const spacing = Math.max(17, 30 - tier * 2);
+          for (let y = 55; y < H - 15; y += spacing) {
+            if (Math.abs(y - gapY) < gapHeight) continue;
+            fire(-8, y, 0, 205 + tier * 12, C.gold, 4);
+            fire(W + 8, y, Math.PI, 205 + tier * 12, C.gold, 4);
+          }
+          shotTimers[0] = Math.max(0.48, 1.25 - tier * 0.05);
+        }
+        if (radialTimers[0] <= 0) {
+          const offset = patternTick * 0.48;
+          for (let k = 0; k < 8; k++) fire(boss.x, boss.y, offset + k * Math.PI / 4, 175 + tier * 11, C.purple, 4);
+          radialTimers[0] = Math.max(0.45, 1.15 - tier * 0.045);
         }
         if (edgeTimer <= 0) {
           edgeAttack();
-          edgeTimer = Math.max(0.25, rand(0.9, 1.3) - tier * 0.04);
+          edgeTimer = Math.max(0.28, rand(0.75, 1.05) - tier * 0.025);
         }
-        if (radialTimers[0] <= 0) {
-          radialShot(boss, 18 + tier * 4, 180 + tier * 12, patternTick * 0.9, C.red);
-          radialTimers[0] = Math.max(0.45, 1.6 - tier * 0.08);
-        }
-      } else {
-        // Stage 15：扇・放射・雨・画面端攻撃を混ぜる最終弾幕
-        if (shotTimers[0] <= 0) {
-          fanShot(boss, 16 + tier * 4, 2.2, 205 + tier * 12, C.gold);
-          rainShot(8 + tier * 4, 220 + tier * 14);
-          shotTimers[0] = Math.max(0.15, 0.52 - tier * 0.025);
-        }
-        if (radialTimers[0] <= 0) {
-          radialShot(boss, 24 + tier * 5, 190 + tier * 12, patternTick, C.purple);
-          radialTimers[0] = Math.max(0.4, 1.25 - tier * 0.06);
-        }
-        if (edgeTimer <= 0) {
-          edgeAttack();
-          edgeTimer = Math.max(0.22, rand(0.65, 0.95) - tier * 0.03);
-        }
-      }
-
-      // ステージ7〜13も時間経過で画面端攻撃が増え、後半ほど逃げ場を狭める。
-      if (stage >= 7 && stage <= 13 && edgeTimer <= 0) {
-        edgeAttack();
-        edgeTimer = Math.max(0.35, rand(1.1, 1.7) - tier * 0.06);
       }
     }
-
     // 予告終了後に画面端から発射
     for (const warning of edgeWarnings) {
       warning.life -= dt;
