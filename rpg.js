@@ -13,6 +13,7 @@
   let lastTime = 0;
   let mode = "title";
   let stage = 1;
+  let world = 1;
   let gold = 0, runGold = 0, elapsed = 0;
   let goldTimer = 0, edgeTimer = 2, patternTick = 0;
   let bulletSpeedMultiplier = 1;
@@ -376,16 +377,17 @@
     });
   }
 
-  function loadUserProgress(account) {
-    gold = Number(account.gold) || 0;
+  function resetUpgrades() {
+    for (const key of Object.keys(upgrades)) upgrades[key] = 0;
+  }
 
+  function loadProgressValues(progress) {
+    gold = Number(progress.gold) || 0;
     unlockedStages.clear();
-    for (const s of account.unlockedStages || [1]) {
-      unlockedStages.add(Number(s));
-    }
+    for (const s of progress.unlockedStages || [1]) unlockedStages.add(Number(s));
     unlockedStages.add(1);
 
-    const old = account.upgrades || {};
+    const old = progress.upgrades || {};
     Object.assign(upgrades, {
       speed: Number(old.speed) || 0,
       hearts: Number(old.hearts) || 0,
@@ -400,16 +402,61 @@
     });
   }
 
+  function loadUserProgress(account) {
+    world = Number(account.currentWorld) === 2 ? 2 : 1;
+    if (world === 2) {
+      loadProgressValues(account.world2Progress || { gold: 0, unlockedStages: [1], upgrades: {} });
+    } else {
+      loadProgressValues(account);
+    }
+
+    // Stage 15を既に解放済みの旧セーブもWorld 2へ進める。
+    if (world === 1 && unlockedStages.has(15)) switchToWorld2();
+  }
+
   function saveUserProgress() {
     if (!currentUser) return;
-
     const accounts = readAccounts();
     if (!accounts[currentUser]) return;
+    const account = accounts[currentUser];
 
-    accounts[currentUser].gold = gold;
-    accounts[currentUser].unlockedStages = [...unlockedStages];
-    accounts[currentUser].upgrades = { ...upgrades };
+    if (world === 1) {
+      account.gold = gold;
+      account.unlockedStages = [...unlockedStages];
+      account.upgrades = { ...upgrades };
+      account.currentWorld = 1;
+    } else {
+      account.world2Progress = {
+        gold,
+        unlockedStages: [...unlockedStages],
+        upgrades: { ...upgrades }
+      };
+      account.currentWorld = 2;
+      account.world2Unlocked = true;
+    }
     saveAccounts(accounts);
+  }
+
+  function switchToWorld2() {
+    if (world === 2) return;
+    world = 2;
+    gold = 0;
+    runGold = 0;
+    elapsed = 0;
+    goldTimer = 0;
+    resetUpgrades();
+    unlockedStages.clear();
+    unlockedStages.add(1);
+    bullets = [];
+    particles = [];
+    edgeWarnings = [];
+    stage = 1;
+    saveUserProgress();
+    mode = "stageSelect";
+    menuIndex = 0;
+    shopScroll = 0;
+    upgradeScroll = 0;
+    showMessage("WORLD 2 解放！GOLD・強化・能力はすべて初期状態です");
   }
 
   function logout() {
@@ -1294,9 +1341,9 @@
       const pulseInterval = Math.max(18, 60 - upgrades.bulletPulse * 14);
       if (pulseTimer >= pulseInterval) {
         pulseTimer = 0;
-        bullets = [];
-        edgeWarnings = [];
-        showMessage("BULLET PULSE 発動！");
+        // 画面上の弾は消さず、短時間のバリアだけを付与する。
+        player.invuln = Math.max(player.invuln, 1.2 + upgrades.bulletPulse * 0.3);
+        showMessage("BULLET PULSE：バリア発動！");
       }
     }
 
@@ -1414,7 +1461,7 @@
   function drawTitle() {
     drawDemon(W / 2, H * 0.16);
 
-    text("RUU RPG", W / 2, H * 0.29, 38, C.white, "center");
+    text("RUU RPG  -  WORLD " + world, W / 2, H * 0.29, 34, C.white, "center");
     text(
       "DODGE - SURVIVE - COLLECT GOLD",
       W / 2, H * 0.37, 13, C.muted, "center"
@@ -1440,7 +1487,7 @@
   }
 
   function drawStageSelect() {
-    text("ステージ選択", W / 2, 36, 25, C.white, "center");
+    text("WORLD " + world + "  /  ステージ選択", W / 2, 36, 25, C.white, "center");
     text(`GOLD: ${gold}`, W / 2, 68, 13, C.gold, "center");
 
     const gap = Math.min(53, (H - 145) / 6);
@@ -1529,7 +1576,7 @@
     {
       id: "bulletPulse",
       name: "BULLET PULSE",
-      desc: level => level ? `${Math.max(18, 60 - level * 14)}秒ごとに敵弾消去` : "一定時間ごとに敵弾を消去",
+      desc: level => level ? `${Math.max(18, 60 - level * 14)}秒ごとに短時間バリア` : "一定時間ごとに短時間バリア",
       color: C.purple
     }
   ];
@@ -1900,7 +1947,13 @@
     gold -= info.cost;
     unlockedStages.add(s);
     saveUserProgress();
-    showMessage(`ステージ${s}を購入しました！`);
+
+    if (s === 15 && world === 1) {
+      switchToWorld2();
+      return;
+    }
+
+    showMessage("ステージ" + s + "を購入しました！");
   }
 
   function buyUpgrade(id) {
