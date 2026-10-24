@@ -50,6 +50,9 @@
   let bullets = [];
   let particles = [];
   let edgeWarnings = [];
+  let strikeWarnings = [];
+  let triangles = [];
+  let gravityVelocity = 0;
   let enemies = [];
   let shotTimers = [];
   let radialTimers = [];
@@ -96,11 +99,7 @@
     { id: 8, cost: 25000, reward: 160, name: "深淵の門", color: "#ff465e" },
     { id: 9, cost: 70000, reward: 260, name: "星屑の嵐", color: "#75c9ff" },
     { id: 10, cost: 190000, reward: 420, name: "紫電回廊", color: "#a78bfa" },
-    { id: 11, cost: 520000, reward: 680, name: "灼熱地獄", color: "#ffad55" },
-    { id: 12, cost: 1400000, reward: 1050, name: "無限螺旋", color: "#78e0ae" },
-    { id: 13, cost: 3800000, reward: 1650, name: "終焉の雨", color: "#ff6575" },
-    { id: 14, cost: 10000000, reward: 2600, name: "虚空の王", color: "#a78bfa" },
-    { id: 15, cost: 28000000, reward: 4200, name: "ラスト・カオス", color: "#ffd166" }
+    { id: 11, cost: 520000, reward: 0, name: "WORLD 2 解放", color: "#bca5ff", worldUnlock: true }
   ];
 
   const unlockedStages = new Set([1]);
@@ -384,7 +383,7 @@
   function loadProgressValues(progress) {
     gold = Number(progress.gold) || 0;
     unlockedStages.clear();
-    for (const s of progress.unlockedStages || [1]) unlockedStages.add(Number(s));
+    for (const s of progress.unlockedStages || [1]) { if (Number(s) >= 1 && Number(s) <= 10) unlockedStages.add(Number(s)); }
     unlockedStages.add(1);
 
     const old = progress.upgrades || {};
@@ -410,8 +409,7 @@
       loadProgressValues(account);
     }
 
-    // Stage 15を既に解放済みの旧セーブもWorld 2へ進める。
-    if (world === 1 && unlockedStages.has(15)) switchToWorld2();
+    // 旧セーブのStage 11〜15はWorld 1のステージ解放として読み込まない。
   }
 
   function saveUserProgress() {
@@ -450,6 +448,8 @@
     bullets = [];
     particles = [];
     edgeWarnings = [];
+    strikeWarnings = [];
+    triangles = [];
     stage = 1;
     saveUserProgress();
     mode = "stageSelect";
@@ -491,6 +491,7 @@
   function resetPlayer() {
     player.x = W / 2;
     player.y = H * 0.78;
+    gravityVelocity = 0;
   }
 
   function showTitle() {
@@ -561,6 +562,7 @@
   // ============================================================
 
   function startRun(s) {
+    if (s === 11 && world === 1) { showMessage("ショップのステージ11欄からWORLD 2を解放してね"); mode = "shop"; return; }
     if (!unlockedStages.has(s)) {
       showMessage("先にショップでこのステージを購入してね");
       mode = "shop";
@@ -583,6 +585,9 @@
     bullets = [];
     particles = [];
     edgeWarnings = [];
+    strikeWarnings = [];
+    triangles = [];
+    gravityVelocity = 0;
 
     edgeTimer = stage === 2 ? 1.2 : 2.8;
     stage4SwitchTimer = 0.25;
@@ -758,15 +763,19 @@
 
     const speedMultiplier = 1 + upgrades.speed * 0.15;
 
-    player.x = clamp(
-      player.x + dx * player.speed * speedMultiplier * dt,
-      12, W - 12
-    );
-
-    player.y = clamp(
-      player.y + dy * player.speed * speedMultiplier * dt,
-      45, H - 18
-    );
+    player.x = clamp(player.x + dx * player.speed * speedMultiplier * dt, 12, W - 12);
+    if (world === 1) {
+      player.y = clamp(player.y + dy * player.speed * speedMultiplier * dt, 45, H - 18);
+      gravityVelocity = 0;
+    } else {
+      const grounded = player.y >= H - 19;
+      if (grounded) {
+        player.y = H - 19; gravityVelocity = 0;
+        if (keys.has("ArrowUp") || keys.has("KeyW") || touchDirs.has("up")) gravityVelocity = -330;
+      } else gravityVelocity += 760 * dt;
+      player.y = clamp(player.y + gravityVelocity * dt, 45, H - 19);
+      if (player.y >= H - 19) gravityVelocity = 0;
+    }
 
     // ステージ1
     if (stage === 1) {
@@ -1033,150 +1042,52 @@
       }
     }
 
-    // WORLD 1 Stage 7〜15：それぞれ異なるギミックの弾幕。
-    if (stage >= 7) {
-      const boss = enemies[0];
-      const tier = Math.floor(elapsed / 30);
-      const color = STAGES[stage - 1]?.color || C.pink;
-      shotTimers[0] -= dt * attackRateMultiplier;
-      radialTimers[0] -= dt * attackRateMultiplier;
-      edgeTimer -= dt * attackRateMultiplier;
-
-      if (stage === 7) {
-        // 7：回転する三本の螺旋アーム。
-        if (shotTimers[0] <= 0) {
-          for (let arm = 0; arm < 3; arm++) {
-            const angle = patternTick * 1.55 + arm * Math.PI * 2 / 3;
-            fire(boss.x, boss.y, angle, 145 + tier * 9, color, 4);
-            fire(boss.x, boss.y, angle + 0.18, 175 + tier * 9, C.purple, 3);
-          }
-          shotTimers[0] = Math.max(0.16, 0.48 - tier * 0.025);
-        }
-        if (radialTimers[0] <= 0) {
-          radialShot(boss, 12 + tier * 2, 115 + tier * 7, -patternTick * 0.7, C.purple);
-          radialTimers[0] = Math.max(0.9, 2.4 - tier * 0.08);
-        }
-      } else if (stage === 8) {
-        // 8：縦横の十字レーザー弾。一定間隔で斜め十字に切り替わる。
-        if (shotTimers[0] <= 0) {
-          const offset = Math.floor(patternTick / 1.2) % 2 ? Math.PI / 4 : 0;
-          for (let k = 0; k < 4; k++) fire(boss.x, boss.y, offset + k * Math.PI / 2, 235 + tier * 12, C.red, 5);
-          shotTimers[0] = Math.max(0.3, 0.82 - tier * 0.035);
-        }
-        if (radialTimers[0] <= 0) {
-          for (let k = 0; k < 8; k++) fire(boss.x, boss.y, Math.PI / 8 + k * Math.PI / 4, 155 + tier * 8, C.orange, 3);
-          radialTimers[0] = Math.max(0.9, 2.3 - tier * 0.08);
-        }
-      } else if (stage === 9) {
-        // 9：プレイヤーの位置を狙う五連射。弾ごとに狙いを少しずらす。
-        if (shotTimers[0] <= 0) {
-          const aim = Math.atan2(player.y - boss.y, player.x - boss.x);
-          for (let k = -2; k <= 2; k++) fire(boss.x, boss.y, aim + k * (0.13 + tier * 0.008), 215 + tier * 12, C.blue, 4);
-          shotTimers[0] = Math.max(0.32, 0.9 - tier * 0.035);
-        }
-        if (radialTimers[0] <= 0) {
-          const aim = Math.atan2(player.y - boss.y, player.x - boss.x);
-          fire(boss.x, boss.y, aim - 0.08, 275 + tier * 12, C.pink, 3);
-          fire(boss.x, boss.y, aim + 0.08, 275 + tier * 12, C.pink, 3);
-          radialTimers[0] = Math.max(0.5, 1.45 - tier * 0.06);
-        }
-      } else if (stage === 10) {
-        // 10：斜めに降り注ぐ電撃雨。
-        if (shotTimers[0] <= 0) {
-          const count = Math.min(55, 8 + tier * 4 + bulletCountBonus);
-          for (let i = 0; i < count; i++) {
-            const x = rand(10, W - 10);
-            fire(x, -8, Math.PI / 2 + rand(-0.58, 0.58), 205 + tier * 13, i % 2 ? C.blue : C.purple, 3.5);
-          }
-          shotTimers[0] = Math.max(0.22, 0.72 - tier * 0.03);
-        }
-        if (radialTimers[0] <= 0) {
-          for (let i = 0; i < 5 + tier; i++) fire(-8, 65 + i * (H - 100) / (4 + tier), 0.12 + i * 0.015, 185 + tier * 10, C.blue, 3);
-          radialTimers[0] = Math.max(0.65, 1.8 - tier * 0.07);
-        }
-      } else if (stage === 11) {
-        // 11：内側と外側で回転方向・速度が違う二重リング。
-        if (shotTimers[0] <= 0) {
-          radialShot(boss, 22 + tier * 3, 118 + tier * 6, patternTick * 0.42, C.orange);
-          shotTimers[0] = Math.max(0.48, 1.2 - tier * 0.035);
-        }
-        if (radialTimers[0] <= 0) {
-          radialShot(boss, 14 + tier * 2, 245 + tier * 10, -patternTick * 0.58, C.red);
-          radialTimers[0] = Math.max(0.72, 1.95 - tier * 0.06);
-        }
-      } else if (stage === 12) {
-        // 12：上下から迫る弾の壁。動く縦の安全地帯を見つける必要がある。
-        if (shotTimers[0] <= 0) {
-          const gapX = W * (0.5 + 0.31 * Math.sin(patternTick * 0.72));
-          const gapWidth = Math.max(42, 100 - tier * 5);
-          const spacing = Math.max(16, 31 - tier * 2);
-          for (let x = 12; x < W; x += spacing) {
-            if (Math.abs(x - gapX) < gapWidth) continue;
-            fire(x, -8, Math.PI / 2, 175 + tier * 10, C.green, 4);
-            fire(x, H + 8, -Math.PI / 2, 175 + tier * 10, C.green, 4);
-          }
-          shotTimers[0] = Math.max(0.55, 1.5 - tier * 0.055);
-        }
-        if (radialTimers[0] <= 0) {
-          const aim = Math.atan2(player.y - boss.y, player.x - boss.x);
-          for (let k = -1; k <= 1; k++) fire(boss.x, boss.y, aim + k * 0.22, 205 + tier * 11, C.green, 4);
-          radialTimers[0] = Math.max(0.65, 1.75 - tier * 0.06);
-        }
-      } else if (stage === 13) {
-        // 13：四方からプレイヤーへ収束するクロスファイア。
-        if (shotTimers[0] <= 0) {
-          const origins = [[12, 52], [W - 12, 52], [12, H * 0.48], [W - 12, H * 0.48]];
-          for (let i = 0; i < origins.length; i++) {
-            const ox = origins[i][0], oy = origins[i][1];
-            const aim = Math.atan2(player.y - oy, player.x - ox);
-            fire(ox, oy, aim - 0.09, 220 + tier * 12, C.pink, 4);
-            fire(ox, oy, aim + 0.09, 220 + tier * 12, C.orange, 4);
-          }
-          shotTimers[0] = Math.max(0.35, 0.95 - tier * 0.035);
-        }
-        if (radialTimers[0] <= 0) {
-          radialShot(boss, 10 + tier * 2, 145 + tier * 8, patternTick * 0.31, C.red);
-          radialTimers[0] = Math.max(0.9, 2.2 - tier * 0.07);
-        }
-      } else if (stage === 14) {
-        // 14：四隅からの同時狙撃。逃げる方向を順番にふさぐ。
-        if (shotTimers[0] <= 0) {
-          const corners = [[10, 10], [W - 10, 10], [10, H - 10], [W - 10, H - 10]];
-          for (let i = 0; i < corners.length; i++) {
-            const ox = corners[i][0], oy = corners[i][1];
-            const aim = Math.atan2(player.y - oy, player.x - ox);
-            for (let k = -1; k <= 1; k++) fire(ox, oy, aim + k * 0.11, 230 + tier * 13, C.purple, 4);
-          }
-          shotTimers[0] = Math.max(0.45, 1.05 - tier * 0.04);
-        }
-        if (radialTimers[0] <= 0) {
-          edgeAttack();
-          radialTimers[0] = Math.max(0.8, 2.0 - tier * 0.06);
-        }
-      } else if (stage === 15) {
-        // 15：左右から迫る横壁と回転するダイヤ形の弾幕を交互に重ねる最終攻撃。
-        if (shotTimers[0] <= 0) {
-          const gapY = H * (0.5 + 0.3 * Math.sin(patternTick * 0.9));
-          const gapHeight = Math.max(38, 90 - tier * 4);
-          const spacing = Math.max(17, 30 - tier * 2);
-          for (let y = 55; y < H - 15; y += spacing) {
-            if (Math.abs(y - gapY) < gapHeight) continue;
-            fire(-8, y, 0, 205 + tier * 12, C.gold, 4);
-            fire(W + 8, y, Math.PI, 205 + tier * 12, C.gold, 4);
-          }
-          shotTimers[0] = Math.max(0.48, 1.25 - tier * 0.05);
-        }
-        if (radialTimers[0] <= 0) {
-          const offset = patternTick * 0.48;
-          for (let k = 0; k < 8; k++) fire(boss.x, boss.y, offset + k * Math.PI / 4, 175 + tier * 11, C.purple, 4);
-          radialTimers[0] = Math.max(0.45, 1.15 - tier * 0.045);
-        }
-        if (edgeTimer <= 0) {
-          edgeAttack();
-          edgeTimer = Math.max(0.28, rand(0.75, 1.05) - tier * 0.025);
-        }
+    // WORLD 1 Stage 7〜10：4種類の異なる攻撃。
+    if (stage === 7) {
+      const wanted = 1 + Math.floor(elapsed / 30);
+      while (triangles.length < Math.min(10, wanted)) {
+        const a = rand(0, Math.PI * 2), speed = 145 + Math.floor(elapsed / 30) * 12;
+        triangles.push({ x: rand(W * 0.2, W * 0.8), y: rand(H * 0.2, H * 0.65), vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, size: 30 + Math.min(12, Math.floor(elapsed / 30) * 2), spin: rand(0, Math.PI * 2) });
       }
+      for (const t of triangles) {
+        t.x += t.vx * dt; t.y += t.vy * dt; t.spin += dt * 0.65;
+        if (t.x < t.size || t.x > W - t.size) { t.vx *= -1; t.x = clamp(t.x, t.size, W - t.size); }
+        if (t.y < 65 + t.size || t.y > H - 25 - t.size) { t.vy *= -1; t.y = clamp(t.y, 65 + t.size, H - 25 - t.size); }
+      }
+    } else if (stage === 8) {
+      shotTimers[0] -= dt * attackRateMultiplier;
+      if (shotTimers[0] <= 0) {
+        for (let n = 0; n < Math.min(7, 2 + Math.floor(tier / 2)); n++) strikeWarnings.push({ x: rand(35, W - 35), y: rand(80, H - 45), life: 0.95, fired: false });
+        shotTimers[0] = Math.max(0.55, 1.65 - tier * 0.09);
+      }
+    } else if (stage === 9) {
+      shotTimers[0] -= dt * attackRateMultiplier;
+      if (shotTimers[0] <= 0) {
+        const dir = Math.floor(patternTick / 2) % 2 === 0 ? 1 : -1;
+        const gapX = clamp(player.x + dir * rand(W * 0.18, W * 0.32), W * 0.15, W * 0.85), y = rand(90, H - 45);
+        for (let x = 12; x < W; x += Math.max(20, 34 - tier * 2)) {
+          if (Math.abs(x - gapX) < Math.max(42, 92 - tier * 3)) continue;
+          fire(dir > 0 ? -8 : W + 8, y + (x / W - 0.5) * 70, dir > 0 ? rand(-0.06, 0.06) : Math.PI + rand(-0.06, 0.06), 240 + tier * 14, C.blue, 4);
+        }
+        shotTimers[0] = Math.max(0.75, 1.8 - tier * 0.08);
+      }
+      if (radialTimers[0] <= 0) { fire(rand(W * 0.15, W * 0.85), 55, Math.PI / 2, 190 + tier * 10, C.pink, 5); radialTimers[0] = Math.max(0.28, 0.72 - tier * 0.025); }
+    } else if (stage === 10) {
+      shotTimers[0] -= dt * attackRateMultiplier; radialTimers[0] -= dt * attackRateMultiplier;
+      if (shotTimers[0] <= 0) {
+        const lanes = Math.min(14, 5 + tier), gapLane = Math.floor((patternTick * 0.7) % lanes);
+        for (let lane = 0; lane < lanes; lane++) { if (lane === gapLane) continue; const x = (lane + 0.5) * W / lanes; fire(x, H + 8, -Math.PI / 2, 190 + tier * 12, C.purple, 4); if (tier >= 2 && lane % 2 === 0) fire(x + 8, H + 8, -Math.PI / 2, 225 + tier * 12, C.blue, 3); }
+        shotTimers[0] = Math.max(0.62, 1.35 - tier * 0.06);
+      }
+      if (radialTimers[0] <= 0) { radialShot(boss, 10 + tier * 2, 105 + tier * 8, patternTick * 0.38, C.orange); radialTimers[0] = Math.max(1.05, 2.6 - tier * 0.08); }
     }
+
+    // Stage 8: 警告マークが消えた位置から放射状に弾を発射。
+    for (const warning of strikeWarnings) {
+      warning.life -= dt;
+      if (warning.life <= 0 && !warning.fired) { warning.fired = true; for (let k = 0; k < 12; k++) fire(warning.x, warning.y, k * Math.PI / 6, 175 + Math.floor(elapsed / 30) * 12, C.red, 4); }
+    }
+    strikeWarnings = strikeWarnings.filter(w => w.life > -0.12);
     // 予告終了後に画面端から発射
     for (const warning of edgeWarnings) {
       warning.life -= dt;
@@ -1203,6 +1114,9 @@
 
     edgeWarnings = edgeWarnings.filter(w => w.life > -0.6);
 
+    if (stage === 7 && player.invuln <= 0) for (const t of triangles) {
+      if (Math.hypot(player.x - t.x, player.y - t.y) < t.size * 0.62 + player.r) { player.lives--; player.invuln = 1.15 + upgrades.guard * 0.35; hitFlash = 0.2; break; }
+    }
     for (const bullet of bullets) {
       // 発射時に速度倍率を適用済みなので、移動中は倍率を掛けない。
       bullet.x += bullet.vx * dt;
@@ -1538,11 +1452,11 @@
     if (world === 2) text("VOID FRONTIER  ·  独立した新しい冒険", W / 2, 51, 9, "#7cecff", "center");
     text(`GOLD: ${gold}`, W / 2, 68, 13, C.gold, "center");
 
+    const playableStages = STAGES.filter(s => !s.worldUnlock);
     const gap = Math.min(53, (H - 145) / 6);
     const startY = 105;
-
-    for (let i = 0; i < STAGES.length; i++) {
-      const s = STAGES[i];
+    for (let i = 0; i < playableStages.length; i++) {
+      const s = playableStages[i];
       const y = startY + i * gap - shopScroll * gap;
 
       if (y < 85 || y > H - 48) continue;
@@ -1692,17 +1606,18 @@
     const listTop = top + 44;
     const rowH = 43;
     const visibleRows = Math.max(1, Math.floor((availableH - 49) / rowH));
-    const maxScroll = Math.max(0, STAGES.length - visibleRows);
+    const shopStageList = world === 1 ? STAGES : STAGES.filter(s => !s.worldUnlock);
+    const maxScroll = Math.max(0, shopStageList.length - visibleRows);
     shopScroll = clamp(shopScroll, 0, maxScroll);
 
     for (let row = 0; row < visibleRows; row++) {
       const i = row + shopScroll;
-      const s = STAGES[i];
+      const s = shopStageList[i];
       if (!s) continue;
 
       const y = listTop + row * rowH;
       const selected = menuIndex === UPGRADE_ITEMS.length + i;
-      const owned = unlockedStages.has(s.id);
+      const owned = s.worldUnlock ? world === 2 : unlockedStages.has(s.id);
 
       rect(
         rightX + 6, y, rightW - 12, rowH - 4,
@@ -1725,9 +1640,8 @@
 
       text(`${s.id}. ${s.name}`, labelX, y + 11, 11, C.white);
       text(
-        owned
-          ? `購入済み / 報酬 ${s.reward}G`
-          : `${s.cost}G / 報酬 ${s.reward}G`,
+        s.worldUnlock ? (world === 2 ? "解放済み" : `${s.cost}G / WORLD 2を解放`) :
+        (owned ? `購入済み / 報酬 ${s.reward}G` : `${s.cost}G / 報酬 ${s.reward}G`),
         labelX, y + 27, 10,
         owned ? C.green : C.gold
       );
@@ -1753,6 +1667,12 @@
   function drawBattle() {
     for (const enemy of enemies) drawEnemy(enemy);
 
+    for (const warning of strikeWarnings) {
+      ctx.save(); ctx.globalAlpha = 0.55 + Math.sin(performance.now() / 65) * 0.3; ctx.strokeStyle = C.red; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(warning.x, warning.y, 18 + (0.95 - warning.life) * 7, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(warning.x - 9, warning.y - 9); ctx.lineTo(warning.x + 9, warning.y + 9); ctx.moveTo(warning.x + 9, warning.y - 9); ctx.lineTo(warning.x - 9, warning.y + 9); ctx.stroke(); ctx.restore();
+    }
+    for (const t of triangles) { ctx.save(); ctx.translate(t.x, t.y); ctx.rotate(t.spin); ctx.fillStyle = "rgba(255,70,94,0.15)"; ctx.strokeStyle = C.purple; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(0, -t.size); ctx.lineTo(t.size * 0.88, t.size * 0.72); ctx.lineTo(-t.size * 0.88, t.size * 0.72); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore(); }
     for (const warning of edgeWarnings) {
       ctx.save();
       ctx.globalAlpha = 0.45 + Math.sin(performance.now() / 80) * 0.25;
@@ -1810,7 +1730,7 @@
 
     drawPlayer();
 
-    text(`STAGE ${stage}`, 14, 20, 13);
+    text(`WORLD ${world}  ·  STAGE ${stage}`, 14, 20, 13);
     text(`TIME ${elapsed.toFixed(1)}s`, 14, 40, 11, C.muted);
     text(`GOLD ${gold}`, W - 14, 20, 13, C.gold, "right");
 
@@ -1820,7 +1740,7 @@
     );
 
     text(
-      "MOVE: WASD / ARROWS   ESC: PAUSE",
+      world === 2 ? "MOVE: A/D OR ARROWS   JUMP: W / UP   ESC: PAUSE" : "MOVE: WASD / ARROWS   ESC: PAUSE",
       W / 2, H - 12, 10, C.muted, "center"
     );
 
@@ -1979,6 +1899,10 @@
   // ============================================================
 
   function buyStage(s) {
+    if (s === 11 && world === 1) {
+      if (gold < 520000) { showMessage("520000 GOLD必要です"); return; }
+      gold -= 520000; saveUserProgress(); switchToWorld2(); return;
+    }
     if (unlockedStages.has(s)) {
       startRun(s);
       return;
@@ -2055,7 +1979,7 @@
     }
 
     if (mode === "stageSelect") {
-      const s = STAGES[menuIndex];
+      const s = STAGES.filter(item => !item.worldUnlock)[menuIndex];
 
       if (s) {
         if (unlockedStages.has(s.id)) {
@@ -2110,7 +2034,7 @@
     if (mode === "title") {
       menuIndex = clamp(menuIndex + direction, 0, 2);
     } else if (mode === "stageSelect") {
-      menuIndex = clamp(menuIndex + direction, 0, STAGES.length - 1);
+      menuIndex = clamp(menuIndex + direction, 0, STAGES.filter(s => !s.worldUnlock).length - 1);
 
       const visibleRows = Math.max(
         1,
@@ -2126,7 +2050,7 @@
       menuIndex = clamp(
         menuIndex + direction,
         0,
-        UPGRADE_ITEMS.length + STAGES.length - 1
+        UPGRADE_ITEMS.length + (world === 1 ? STAGES.length : STAGES.filter(s => !s.worldUnlock).length) - 1
       );
 
       if (menuIndex >= UPGRADE_ITEMS.length) {
