@@ -726,7 +726,7 @@
       for (let i = 0; i < enemies.length; i++) {
         const enemy = enemies[i];
 
-        shotTimers[i] -= dt;
+        shotTimers[i] -= dt * attackRateMultiplier;
         if (shotTimers[i] <= 0) {
           aimedShot(
             enemy,
@@ -739,7 +739,7 @@
           );
         }
 
-        radialTimers[i] -= dt;
+        radialTimers[i] -= dt * attackRateMultiplier;
         if (radialTimers[i] <= 0) {
           if (i === 0) {
             radialShot(
@@ -760,7 +760,7 @@
 
     // ステージ2：放射攻撃と画面端攻撃
     if (stage === 2) {
-      radialTimers[0] -= dt;
+      radialTimers[0] -= dt * attackRateMultiplier;
 
       if (radialTimers[0] <= 0) {
         radialShot(
@@ -780,7 +780,7 @@
 
       // 左右の敵がプレイヤーを狙って弾を撃つ
       for (let i = 1; i <= 2; i++) {
-        shotTimers[i] -= dt;
+        shotTimers[i] -= dt * attackRateMultiplier;
 
         if (shotTimers[i] <= 0) {
           aimedShot(
@@ -812,7 +812,7 @@
       for (let i = 0; i < enemies.length; i++) {
         const e = enemies[i];
 
-        shotTimers[i] -= dt;
+        shotTimers[i] -= dt * attackRateMultiplier;
         if (shotTimers[i] <= 0) {
           const base =
             patternTick * (i === 1 ? -1 : 1) * 1.35 + i * 0.7;
@@ -825,7 +825,7 @@
           shotTimers[i] = 0.18;
         }
 
-        radialTimers[i] -= dt;
+        radialTimers[i] -= dt * attackRateMultiplier;
         if (radialTimers[i] <= 0) {
           radialShot(
             e, 10, 125,
@@ -921,7 +921,7 @@
         );
       }
 
-      shotTimers[0] -= dt;
+      shotTimers[0] -= dt * attackRateMultiplier;
 
       if (shotTimers[0] <= 0) {
         aimedShot(
@@ -970,7 +970,7 @@
       }
 
       for (let i = 1; i <= 4; i++) {
-        shotTimers[i] -= dt;
+        shotTimers[i] -= dt * attackRateMultiplier;
 
         if (shotTimers[i] <= 0) {
           aimedShot(
@@ -991,8 +991,8 @@
       const boss = enemies[0];
       const tier = Math.floor(elapsed / 30);
       const color = STAGES[stage - 1]?.color || C.pink;
-      shotTimers[0] -= dt;
-      radialTimers[0] -= dt;
+      shotTimers[0] -= dt * attackRateMultiplier;
+      radialTimers[0] -= dt * attackRateMultiplier;
       edgeTimer -= dt * attackRateMultiplier;
 
       if (stage === 7) {
