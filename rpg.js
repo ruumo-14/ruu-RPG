@@ -1376,22 +1376,64 @@
   }
 
   function drawBackground() {
-    rect(0, 0, W, H, C.bg);
-
-    ctx.strokeStyle = C.line;
-    ctx.strokeRect(1, 1, W - 2, H - 2);
-
-    ctx.globalAlpha = 0.13;
-
-    for (let x = 20; x < W; x += 32) {
-      rect(x, 0, 1, H, "#1d3042");
+    if (world === 1) {
+      // WORLD 1：元の暗い青色と四角いグリッドを維持。
+      rect(0, 0, W, H, C.bg);
+      ctx.strokeStyle = C.line;
+      ctx.strokeRect(1, 1, W - 2, H - 2);
+      ctx.globalAlpha = 0.13;
+      for (let x = 20; x < W; x += 32) rect(x, 0, 1, H, "#1d3042");
+      for (let y = 20; y < H; y += 32) rect(0, y, W, 1, "#1d3042");
+      ctx.globalAlpha = 1;
+      return;
     }
 
-    for (let y = 20; y < H; y += 32) {
-      rect(0, y, W, 1, "#1d3042");
+    // WORLD 2：紫の星雲、シアンの軌道、星屑で別世界の雰囲気にする。
+    const gradient = ctx.createLinearGradient(0, 0, W, H);
+    gradient.addColorStop(0, "#100821");
+    gradient.addColorStop(0.48, "#21103c");
+    gradient.addColorStop(1, "#061c31");
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.save();
+    ctx.globalAlpha = 0.22;
+    ctx.fillStyle = "#7137a8";
+    ctx.beginPath();
+    ctx.ellipse(W * 0.24, H * 0.28, W * 0.27, H * 0.22, -0.35, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#087c9b";
+    ctx.beginPath();
+    ctx.ellipse(W * 0.78, H * 0.72, W * 0.3, H * 0.24, 0.4, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.globalAlpha = 0.24;
+    ctx.strokeStyle = "#62eaff";
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 5; i++) {
+      ctx.beginPath();
+      ctx.ellipse(W * 0.5, H * 0.5, 90 + i * 65, 28 + i * 23, -0.22, 0, Math.PI * 2);
+      ctx.stroke();
     }
 
-    ctx.globalAlpha = 1;
+    ctx.globalAlpha = 0.62;
+    for (let i = 0; i < 100; i++) {
+      const x = (i * 137.5 + (i % 7) * 19) % W;
+      const y = (i * 73.7 + (i % 11) * 13) % H;
+      const size = i % 9 === 0 ? 3 : (i % 3 === 0 ? 2 : 1);
+      rect(x, y, size, size, i % 4 === 0 ? "#bca5ff" : "#7cecff");
+    }
+    ctx.restore();
+
+    ctx.strokeStyle = "#4b2d72";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(3, 3, W - 6, H - 6);
+    ctx.strokeStyle = "#2b8198";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(9, 9, W - 18, H - 18);
+
+    // World名を全画面メニューで常に表示し、切り替わったことを明確にする。
+    text("WORLD 2  //  VOID FRONTIER", W / 2, H - 8, 9, "#7cecff", "center");
   }
 
   function drawDemon(x, y, color = C.red) {
@@ -1444,10 +1486,14 @@
   function drawButton(label, x, y, selected, width = 300, height = 44) {
     rect(
       x - width / 2, y - height / 2, width, height,
-      selected ? "#1b3850" : C.panel
+      world === 2
+        ? (selected ? "#39245b" : "#17172f")
+        : (selected ? "#1b3850" : C.panel)
     );
 
-    ctx.strokeStyle = selected ? C.blue : C.line;
+    ctx.strokeStyle = world === 2
+      ? (selected ? "#7cecff" : "#594276")
+      : (selected ? C.blue : C.line);
     ctx.lineWidth = selected ? 2 : 1;
     ctx.strokeRect(x - width / 2, y - height / 2, width, height);
 
@@ -1461,7 +1507,8 @@
   function drawTitle() {
     drawDemon(W / 2, H * 0.16);
 
-    text("RUU RPG  -  WORLD " + world, W / 2, H * 0.29, 34, C.white, "center");
+    text(world === 2 ? "RUU RPG  -  WORLD 2" : "RUU RPG  -  WORLD 1", W / 2, H * 0.29, 34, world === 2 ? "#bca5ff" : C.white, "center");
+    if (world === 2) text("VOID FRONTIER  ·  NEW UNIVERSE", W / 2, H * 0.335, 11, "#7cecff", "center");
     text(
       "DODGE - SURVIVE - COLLECT GOLD",
       W / 2, H * 0.37, 13, C.muted, "center"
@@ -1487,7 +1534,8 @@
   }
 
   function drawStageSelect() {
-    text("WORLD " + world + "  /  ステージ選択", W / 2, 36, 25, C.white, "center");
+    text("WORLD " + world + "  /  ステージ選択", W / 2, 36, 25, world === 2 ? "#bca5ff" : C.white, "center");
+    if (world === 2) text("VOID FRONTIER  ·  独立した新しい冒険", W / 2, 51, 9, "#7cecff", "center");
     text(`GOLD: ${gold}`, W / 2, 68, 13, C.gold, "center");
 
     const gap = Math.min(53, (H - 145) / 6);
@@ -1594,8 +1642,8 @@
     const rightW = W - rightX - margin;
 
     // 左側：アイテム・アップグレード
-    rect(leftX, top, leftW, availableH, "#0b1927");
-    ctx.strokeStyle = C.line;
+    rect(leftX, top, leftW, availableH, world === 2 ? "#17132b" : "#0b1927");
+    ctx.strokeStyle = world === 2 ? "#594276" : C.line;
     ctx.strokeRect(leftX, top, leftW, availableH);
     text("アイテム・強化", leftX + leftW / 2, top + 19, 14, C.blue, "center");
 
@@ -1636,8 +1684,8 @@
     }
 
     // 右側：ステージ一覧はアイテムを選択していても表示
-    rect(rightX, top, rightW, availableH, "#0b1927");
-    ctx.strokeStyle = C.line;
+    rect(rightX, top, rightW, availableH, world === 2 ? "#111c30" : "#0b1927");
+    ctx.strokeStyle = world === 2 ? "#2b8198" : C.line;
     ctx.strokeRect(rightX, top, rightW, availableH);
     text("ステージ購入", rightX + rightW / 2, top + 19, 14, C.orange, "center");
 
