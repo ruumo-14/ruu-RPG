@@ -1920,11 +1920,6 @@
     unlockedStages.add(s);
     saveUserProgress();
 
-    if (s === 15 && world === 1) {
-      switchToWorld2();
-      return;
-    }
-
     showMessage("ステージ" + s + "を購入しました！");
   }
 
@@ -2044,7 +2039,7 @@
       shopScroll = clamp(
         menuIndex - visibleRows + 1,
         0,
-        STAGES.length - visibleRows
+        STAGES.filter(s => !s.worldUnlock).length - visibleRows
       );
     } else if (mode === "shop") {
       menuIndex = clamp(
@@ -2059,7 +2054,7 @@
         shopScroll = clamp(
           stageIndex - visibleRows + 1,
           0,
-          Math.max(0, STAGES.length - visibleRows)
+          Math.max(0, (world === 1 ? STAGES.length : STAGES.filter(s => !s.worldUnlock).length) - visibleRows)
         );
       } else {
         const visibleUpgradeRows = Math.max(1, Math.floor((H - 109 - 50) / 48));
@@ -2213,11 +2208,11 @@
         menuIndex = upgradeScroll;
       } else {
         const stageStart = UPGRADE_ITEMS.length;
-        shopScroll = clamp(shopScroll + delta, 0, Math.max(0, STAGES.length - 1));
+        shopScroll = clamp(shopScroll + delta, 0, Math.max(0, (world === 1 ? STAGES.length : STAGES.filter(s => !s.worldUnlock).length) - 1));
         menuIndex = stageStart + shopScroll;
       }
     } else {
-      shopScroll = clamp(shopScroll + delta, 0, Math.max(0, STAGES.length - 1));
+      shopScroll = clamp(shopScroll + delta, 0, Math.max(0, STAGES.filter(s => !s.worldUnlock).length - 1));
       menuIndex = shopScroll;
     }
   }, { passive: false });
