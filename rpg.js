@@ -647,6 +647,12 @@
     fire(enemy.x, enemy.y, angle, speed, color);
   }
 
+  function fireHoming(enemy, speed, color = C.pink) {
+    const angle = Math.atan2(player.y - enemy.y, player.x - enemy.x);
+    const adjustedSpeed = speed * Math.max(0.68, 1 - upgrades.bulletSlow * 0.08) * bulletSpeedMultiplier;
+    bullets.push({ x: enemy.x, y: enemy.y, vx: Math.cos(angle) * adjustedSpeed, vy: Math.sin(angle) * adjustedSpeed, r: 5, color, dead: false, homing: true, homingSpeed: adjustedSpeed });
+  }
+
   function radialShot(enemy, count, speed, offset = 0, color = C.pink) {
     count = Math.min(120, count + bulletCountBonus);
     for (let i = 0; i < count; i++) {
@@ -779,9 +785,10 @@
       const jumpHeld = keys.has("ArrowUp") || keys.has("KeyW") || keys.has("Space") || touchDirs.has("up");
       if (grounded) {
         player.y = H - 19; gravityVelocity = 0;
-        if (jumpHeld) { gravityVelocity = -340; jumpHoldTime = 0; }
+        if (jumpHeld) { gravityVelocity = -260; jumpHoldTime = 0; }
       } else if (gravityVelocity < 0 && jumpHeld && jumpHoldTime < 0.42) {
-        jumpHoldTime += dt; gravityVelocity += 250 * dt;
+        // Hold jump with near-zero gravity so the maximum jump height stays close to the old value.
+        jumpHoldTime += dt; gravityVelocity += 0 * dt;
       } else gravityVelocity += 760 * dt;
       player.y = clamp(player.y + gravityVelocity * dt, 45, H - 19);
       if (player.y >= H - 19) { gravityVelocity = 0; jumpHoldTime = 0; }
@@ -1056,13 +1063,14 @@
     if (stage === 7) {
       // 開始時10個。30秒ごとに2個増やし、同時に速度も上げる。
       const tier = Math.floor(elapsed / 30);
-      const wanted = Math.min(40, 10 + tier * 2);
+      const wanted = Math.min(40, 20 + tier * 2);
       const speed = 165 + tier * 32;
       while (triangles.length < wanted) {
         const a = rand(0, Math.PI * 2);
-        triangles.push({ x: rand(0, W), y: rand(45, H), vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, size: 34 + Math.min(10, tier * 2), spin: rand(0, Math.PI * 2) });
+        triangles.push({ x: rand(0, W), y: rand(45, H), vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, size: 48 + Math.min(16, tier * 3), spin: rand(0, Math.PI * 2) });
       }
       for (const t of triangles) {
+        t.size = Math.max(t.size, 48 + Math.min(16, tier * 3));
         const currentSpeed = Math.hypot(t.vx, t.vy) || speed;
         const nextSpeed = Math.max(currentSpeed, speed);
         t.vx = t.vx / currentSpeed * nextSpeed; t.vy = t.vy / currentSpeed * nextSpeed;
@@ -1071,18 +1079,41 @@
         if (t.x < 0 || t.x > W) { t.vx *= -1; t.x = clamp(t.x, 0, W); }
         if (t.y < 45 || t.y > H) { t.vy *= -1; t.y = clamp(t.y, 45, H); }
       }
+      // 中央の敵が、追尾弾と全方向攻撃をランダムに発射。
+      shotTimers[0] -= dt * attackRateMultiplier;
+      radialTimers[0] -= dt * attackRateMultiplier;
+      if (shotTimers[0] <= 0) {
+        fireHoming(enemies[0], 165 + tier * 9, C.cyan);
+        if (Math.random() < 0.3) fireHoming(enemies[0], 150 + tier * 8, C.pink);
+        shotTimers[0] = rand(1.15, 2.35);
+      }
+      if (radialTimers[0] <= 0) {
+        radialShot(enemies[0], 18 + Math.min(18, tier * 2), 125 + tier * 8, rand(0, Math.PI * 2), C.orange);
+        radialTimers[0] = rand(2.2, 4.0);
+      }
     } else if (stage === 8) {
       shotTimers[0] -= dt * attackRateMultiplier;
       if (shotTimers[0] <= 0) {
-        for (let n = 0; n < Math.min(7, 2 + Math.floor(tier / 2)); n++) strikeWarnings.push({ x: rand(35, W - 35), y: rand(80, H - 45), life: 0.95, fired: false });
-        shotTimers[0] = Math.max(0.55, 1.65 - tier * 0.09);
+        const count = Math.min(16, 5 + tier * 2);
+        for (let n = 0; n < count; n++) {
+          const side = Math.floor(Math.random() * 4);
+          let x, y;
+          if (side === 0) { x = rand(35, W - 35); y = 48; }
+          else if (side === 1) { x = W - 24; y = rand(65, H - 30); }
+          else if (side === 2) { x = rand(35, W - 35); y = H - 24; }
+          else { x = 24; y = rand(65, H - 30); }
+          strikeWarnings.push({ x, y, life: 0.8, fired: false });
+        }
+        shotTimers[0] = Math.max(0.38, 1.2 - tier * 0.07);
       }
     } else if (stage === 9) {
       shotTimers[0] -= dt * attackRateMultiplier;
       if (shotTimers[0] <= 0) {
         const dir = Math.floor(patternTick / 2) % 2 === 0 ? 1 : -1;
         const gapX = clamp(player.x + dir * rand(W * 0.18, W * 0.32), W * 0.15, W * 0.85), y = rand(90, H - 45);
-        for (let x = 12; x < W; x += Math.max(20, 34 - tier * 2)) {
+        const points = Math.min(12, 4 + tier);
+        for (let n = 0; n < points; n++) {
+          const x = (n + 0.5) * W / points;
           if (Math.abs(x - gapX) < Math.max(42, 92 - tier * 3)) continue;
           fire(dir > 0 ? -8 : W + 8, y + (x / W - 0.5) * 70, dir > 0 ? rand(-0.06, 0.06) : Math.PI + rand(-0.06, 0.06), 240 + tier * 14, C.blue, 4);
         }
@@ -1102,7 +1133,7 @@
     // Stage 8: 警告マークが消えた位置から放射状に弾を発射。
     for (const warning of strikeWarnings) {
       warning.life -= dt;
-      if (warning.life <= 0 && !warning.fired) { warning.fired = true; for (let k = 0; k < 12; k++) fire(warning.x, warning.y, k * Math.PI / 6, 175 + Math.floor(elapsed / 30) * 12, C.red, 4); }
+      if (warning.life <= 0 && !warning.fired) { warning.fired = true; for (let k = 0, count = 14 + Math.min(8, Math.floor(elapsed / 30) * 2); k < count; k++) fire(warning.x, warning.y, k * Math.PI * 2 / count, 175 + Math.floor(elapsed / 30) * 12, C.red, 4); }
     }
     strikeWarnings = strikeWarnings.filter(w => w.life > -0.12);
     // 予告終了後に画面端から発射
@@ -1150,6 +1181,16 @@
     }
     for (const bullet of bullets) {
       // 発射時に速度倍率を適用済みなので、移動中は倍率を掛けない。
+      if (bullet.homing && !bullet.dead) {
+        const speed = bullet.homingSpeed || Math.hypot(bullet.vx, bullet.vy) || 1;
+        const current = Math.atan2(bullet.vy, bullet.vx);
+        const target = Math.atan2(player.y - bullet.y, player.x - bullet.x);
+        let delta = ((target - current + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+        delta = clamp(delta, -1.7 * dt, 1.7 * dt);
+        const angle = current + delta;
+        bullet.vx = Math.cos(angle) * speed;
+        bullet.vy = Math.sin(angle) * speed;
+      }
       bullet.x += bullet.vx * dt;
       bullet.y += bullet.vy * dt;
 
