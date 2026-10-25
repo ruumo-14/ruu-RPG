@@ -789,10 +789,15 @@
       player.y = clamp(player.y + dy * player.speed * speedMultiplier * dt, 45, H - 18);
       gravityVelocity = 0;
     } else {
-      const grounded = player.y >= H - 19;
+      const stompPlatform = bullets.find(b =>
+        b.stomped && Math.abs(player.x - b.x) < player.r + b.r * 0.78 &&
+        Math.abs((player.y + player.r) - (b.y - b.r)) < 6
+      );
+      const grounded = player.y >= H - 19 || !!stompPlatform;
       const jumpHeld = keys.has("ArrowUp") || keys.has("KeyW") || keys.has("Space") || touchDirs.has("up");
       if (grounded) {
-        player.y = H - 19; gravityVelocity = 0;
+        player.y = stompPlatform ? stompPlatform.y - stompPlatform.r - player.r : H - 19;
+        gravityVelocity = 0;
         if (jumpHeld) { gravityVelocity = -260; jumpHoldTime = 0; }
       } else if (gravityVelocity < 0 && jumpHeld && jumpHoldTime < 0.42) {
         // Hold jump with near-zero gravity so the maximum jump height stays close to the old value.
