@@ -872,7 +872,7 @@
             bullets.push({
               x, y: H + 12, vx: 0, vy: -(250 + tier * 14),
               r: 7, color: "#e8edf4", dead: false, gravity: false,
-              boneWall: true, waveSide: "top", waveStopY: H * 0.43,
+              boneWall: true, waveSide: "bottom", waveStopY: H * 0.43,
               waveLife: 0.65, stompable: false
             });
           }
