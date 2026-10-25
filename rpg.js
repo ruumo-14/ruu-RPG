@@ -794,6 +794,43 @@
       if (player.y >= H - 19) { gravityVelocity = 0; jumpHoldTime = 0; }
     }
 
+    if (world === 2) {
+      // WORLD 2は全10ステージを専用攻撃で構成。
+      const e = enemies[0] || { x: W * 0.5, y: H * 0.2 };
+      shotTimers[0] = (shotTimers[0] ?? 0) - dt * attackRateMultiplier;
+      radialTimers[0] = (radialTimers[0] ?? 0) - dt * attackRateMultiplier;
+      if (stage === 1) {
+        if (shotTimers[0] <= 0) {
+          for (let k=0;k<6;k++) { const a=patternTick*0.55+k*Math.PI/3; fire(e.x,e.y,a,155+tier*8,"#7cecff",4); fire(e.x,e.y,a+Math.PI/6,115+tier*6,"#bca5ff",3); }
+          shotTimers[0]=Math.max(0.42,1.05-tier*0.04);
+        }
+      } else if (stage === 2) {
+        if (shotTimers[0] <= 0) {
+          const count=9+Math.min(9,tier);
+          for(let k=0;k<count;k++){const a=patternTick*0.9+k*Math.PI*2/count;fire(0,H*0.5,a,135+tier*9,"#7cecff",4);fire(W,H*0.5,a+Math.PI,135+tier*9,"#bca5ff",4);}
+          shotTimers[0]=Math.max(0.55,1.3-tier*0.04);
+        }
+      } else if (stage === 3) {
+        if(shotTimers[0]<=0){const angle=Math.sin(patternTick*1.7)*0.6;for(let k=-4;k<=4;k++)fire(e.x,e.y,Math.PI/2+angle+k*0.16,175+tier*10,"#bca5ff",4);shotTimers[0]=Math.max(0.3,0.82-tier*0.035);}
+      } else if (stage === 4) {
+        if(shotTimers[0]<=0){for(let k=0,count=Math.min(24,8+tier*2);k<count;k++)fire(rand(12,W-12),42,Math.PI/2+rand(-0.5,0.5),160+tier*12,"#ffad55",4);shotTimers[0]=Math.max(0.38,1.1-tier*0.04);}
+      } else if (stage === 5) {
+        if(shotTimers[0]<=0){radialShot(e,20+Math.min(16,tier*2),115+tier*8,patternTick*0.3,"#7cecff");radialShot(e,12+Math.min(12,tier),175+tier*9,-patternTick*0.22,"#bca5ff");shotTimers[0]=Math.max(0.7,1.65-tier*0.045);}
+      } else if (stage === 6) {
+        if(shotTimers[0]<=0){const corners=[[0,45,0.55],[W,45,Math.PI-0.55],[0,H,-0.55],[W,H,Math.PI+0.55]];for(const [x,y,a] of corners)for(let k=-2;k<=2;k++)fire(x,y,a+k*0.08,210+tier*12,"#7cecff",4);shotTimers[0]=Math.max(0.6,1.45-tier*0.04);}
+      } else if (stage === 7) {
+        if(shotTimers[0]<=0){const count=Math.min(7,2+Math.floor(tier/2));for(let k=0;k<count;k++)fireHoming({x:rand(30,W-30),y:rand(55,H*0.45)},125+tier*10,k%2?"#bca5ff":"#7cecff");shotTimers[0]=Math.max(0.42,1-tier*0.035);}
+      } else if (stage === 8) {
+        if(shotTimers[0]<=0){for(let k=0,count=Math.min(18,5+tier*2);k<count;k++)strikeWarnings.push({x:rand(35,W-35),y:rand(65,H-35),life:rand(0.45,0.8),fired:false,world2Portal:true});shotTimers[0]=Math.max(0.3,0.95-tier*0.04);}
+        for(const warning of strikeWarnings){if(!warning.world2Portal)continue;warning.life-=dt;if(warning.life<=0&&!warning.fired){warning.fired=true;const count=10+Math.min(10,tier);for(let k=0;k<count;k++)fire(warning.x,warning.y,patternTick*0.5+k*Math.PI*2/count,145+tier*12,"#7cecff",4);}}
+        strikeWarnings=strikeWarnings.filter(w=>!w.world2Portal||w.life>-0.12);
+      } else if (stage === 9) {
+        if(shotTimers[0]<=0){const count=Math.min(24,8+tier*2);for(let k=0;k<count;k++){const t=(k+0.5)/count;fire(-8,t*H,rand(-0.32,0.32),210+tier*14,"#7cecff",4);fire(W+8,t*H,Math.PI+rand(-0.32,0.32),210+tier*14,"#bca5ff",4);fire(t*W,-8,Math.PI/2+rand(-0.32,0.32),210+tier*14,"#ffad55",4);fire(t*W,H+8,-Math.PI/2+rand(-0.32,0.32),210+tier*14,"#ff6575",4);}shotTimers[0]=Math.max(0.5,1.25-tier*0.04);}
+      } else if (stage === 10) {
+        if(shotTimers[0]<=0){radialShot(e,28+Math.min(24,tier*2),145+tier*10,patternTick*0.42,"#bca5ff");aimedShot(e,190+tier*12,"#7cecff");if(Math.random()<0.65)aimedShot(e,175+tier*10,"#ff6575");shotTimers[0]=Math.max(0.4,1-tier*0.035);}
+      }
+    } else {
+      // WORLD 1のステージ攻撃ロジック
     // ステージ1
     if (stage === 1) {
       for (let i = 0; i < enemies.length; i++) {
@@ -1094,32 +1131,40 @@
     } else if (stage === 8) {
       shotTimers[0] -= dt * attackRateMultiplier;
       if (shotTimers[0] <= 0) {
-        const count = Math.min(16, 5 + tier * 2);
-        for (let n = 0; n < count; n++) {
-          const side = Math.floor(Math.random() * 4);
-          let x, y;
-          if (side === 0) { x = rand(35, W - 35); y = 48; }
-          else if (side === 1) { x = W - 24; y = rand(65, H - 30); }
-          else if (side === 2) { x = rand(35, W - 35); y = H - 24; }
-          else { x = 24; y = rand(65, H - 30); }
-          strikeWarnings.push({ x, y, life: 0.8, fired: false });
-        }
-        shotTimers[0] = Math.max(0.38, 1.2 - tier * 0.07);
+        // 画面端に限定せず、戦闘画面のどこにでも警告ポータルを出す。
+        const count = Math.min(22, 8 + tier * 2);
+        for (let n = 0; n < count; n++) strikeWarnings.push({ x: rand(30, W - 30), y: rand(65, H - 35), life: rand(0.55, 0.9), fired: false });
+        shotTimers[0] = Math.max(0.28, 0.92 - tier * 0.055);
       }
     } else if (stage === 9) {
       shotTimers[0] -= dt * attackRateMultiplier;
+      radialTimers[0] -= dt * attackRateMultiplier;
       if (shotTimers[0] <= 0) {
-        const dir = Math.floor(patternTick / 2) % 2 === 0 ? 1 : -1;
-        const gapX = clamp(player.x + dir * rand(W * 0.18, W * 0.32), W * 0.15, W * 0.85), y = rand(90, H - 45);
-        const points = Math.min(12, 4 + tier);
+        // 4ポイントから始まり、時間とともに増加。上下左右から同時に迫る。
+        const points = Math.min(28, 4 + tier * 3);
+        const gapX = clamp(player.x + rand(-W * 0.28, W * 0.28), W * 0.12, W * 0.88);
+        const gapY = clamp(player.y + rand(-H * 0.28, H * 0.18), H * 0.16, H * 0.84);
         for (let n = 0; n < points; n++) {
-          const x = (n + 0.5) * W / points;
-          if (Math.abs(x - gapX) < Math.max(42, 92 - tier * 3)) continue;
-          fire(dir > 0 ? -8 : W + 8, y + (x / W - 0.5) * 70, dir > 0 ? rand(-0.06, 0.06) : Math.PI + rand(-0.06, 0.06), 240 + tier * 14, C.blue, 4);
+          const t = (n + 0.5) / points, x = t * W, y = t * H;
+          if (Math.abs(x - gapX) > Math.max(30, 76 - tier * 2)) {
+            fire(-8, rand(35, H - 18), 0, 250 + tier * 16, C.blue, 4);
+            fire(W + 8, rand(35, H - 18), Math.PI, 250 + tier * 16, C.cyan, 4);
+          }
+          if (Math.abs(y - gapY) > Math.max(26, 65 - tier * 2)) {
+            fire(rand(10, W - 10), -8, Math.PI / 2, 245 + tier * 16, C.pink, 4);
+            fire(rand(10, W - 10), H + 8, -Math.PI / 2, 245 + tier * 16, C.orange, 4);
+          }
+          if (n % 2 === 0) {
+            fire(-8, y, Math.atan2(y - player.y, W * 0.45), 205 + tier * 13, C.purple, 3);
+            fire(W + 8, H - y, Math.atan2(player.y - (H - y), -W * 0.45), 205 + tier * 13, C.purple, 3);
+          }
         }
-        shotTimers[0] = Math.max(0.75, 1.8 - tier * 0.08);
+        shotTimers[0] = Math.max(0.42, 1.25 - tier * 0.055);
       }
-      if (radialTimers[0] <= 0) { fire(rand(W * 0.15, W * 0.85), 55, Math.PI / 2, 190 + tier * 10, C.pink, 5); radialTimers[0] = Math.max(0.28, 0.72 - tier * 0.025); }
+      if (radialTimers[0] <= 0) {
+        radialShot(enemies[0], 14 + Math.min(20, tier * 2), 120 + tier * 9, rand(0, Math.PI * 2), C.pink);
+        radialTimers[0] = Math.max(0.65, rand(1.35, 2.0) - tier * 0.04);
+      }
     } else if (stage === 10) {
       shotTimers[0] -= dt * attackRateMultiplier; radialTimers[0] -= dt * attackRateMultiplier;
       if (shotTimers[0] <= 0) {
@@ -1179,6 +1224,8 @@
         }
       }
     }
+    } // WORLD 1 attack patterns end
+
     for (const bullet of bullets) {
       // 発射時に速度倍率を適用済みなので、移動中は倍率を掛けない。
       if (bullet.homing && !bullet.dead) {
