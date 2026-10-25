@@ -1297,7 +1297,7 @@
       }
     }
 
-    if (stage === 6 && player.invuln <= 0) {
+    if (world === 1 && stage === 6 && player.invuln <= 0) {
       const cx = enemies[0].x, cy = enemies[0].y;
       const length = Math.hypot(W, H) * 1.25;
       const x1 = cx - Math.cos(stage6Angle) * length;
@@ -1802,7 +1802,7 @@
       ctx.restore();
     }
 
-    if (stage === 6 && enemies[0]) {
+    if (world === 1 && stage === 6 && enemies[0]) {
       const cx = enemies[0].x, cy = enemies[0].y;
       const length = Math.hypot(W, H) * 1.25;
 
