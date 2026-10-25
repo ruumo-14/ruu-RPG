@@ -623,19 +623,26 @@
 
   function fire(x, y, angle, speed, color = C.pink, radius = 4) {
     // 発射時点の倍率を速度に適用する。
-    // これにより、すでに飛んでいる弾は後から加速しない。
     const adjustedSpeed =
       speed *
       Math.max(0.68, 1 - upgrades.bulletSlow * 0.08) *
       bulletSpeedMultiplier;
 
+    const world2 = world === 2;
     bullets.push({
       x, y,
       vx: Math.cos(angle) * adjustedSpeed,
       vy: Math.sin(angle) * adjustedSpeed,
       r: radius,
       color,
-      dead: false
+      dead: false,
+      // WORLD 2の弾は重力で軌道が曲がり、床で跳ね返る。
+      gravity: world2,
+      gravityAccel: world2 ? 250 + stage * 18 : 0,
+      bounce: world2,
+      bounceCount: 0,
+      stomped: false,
+      stompLife: 0
     });
   }
 
@@ -762,6 +769,7 @@
     player.invuln = Math.max(0, player.invuln - dt);
     hitFlash = Math.max(0, hitFlash - dt);
 
+    const previousPlayerY = player.y;
     let dx = 0, dy = 0;
 
     if (keys.has("ArrowLeft") || keys.has("KeyA") || touchDirs.has("left")) dx--;
@@ -827,7 +835,35 @@
       } else if (stage === 9) {
         if(shotTimers[0]<=0){const count=Math.min(24,8+tier*2);for(let k=0;k<count;k++){const t=(k+0.5)/count;fire(-8,t*H,rand(-0.32,0.32),210+tier*14,"#7cecff",4);fire(W+8,t*H,Math.PI+rand(-0.32,0.32),210+tier*14,"#bca5ff",4);fire(t*W,-8,Math.PI/2+rand(-0.32,0.32),210+tier*14,"#ffad55",4);fire(t*W,H+8,-Math.PI/2+rand(-0.32,0.32),210+tier*14,"#ff6575",4);}shotTimers[0]=Math.max(0.5,1.25-tier*0.04);}
       } else if (stage === 10) {
-        if(shotTimers[0]<=0){radialShot(e,28+Math.min(24,tier*2),145+tier*10,patternTick*0.42,"#bca5ff");aimedShot(e,190+tier*12,"#7cecff");if(Math.random()<0.65)aimedShot(e,175+tier*10,"#ff6575");shotTimers[0]=Math.max(0.4,1-tier*0.035);}
+        // 最終ステージは放射弾をやめ、巨大な重力球が上から落下して床で跳ねる攻撃に変更。
+        if (shotTimers[0] <= 0) {
+          const lanes = Math.min(7, 3 + Math.floor(tier / 2));
+          for (let k = 0; k < lanes; k++) {
+            const x = (k + 0.5) * W / lanes + rand(-22, 22);
+            const ball = {
+              x: clamp(x, 22, W - 22), y: 48,
+              vx: rand(-95, 95), vy: 45 + rand(0, 70),
+              r: 10 + Math.min(8, tier), color: k % 2 ? "#bca5ff" : "#7cecff",
+              dead: false, gravity: true, gravityAccel: 420 + tier * 20,
+              bounce: true, bounceCount: 0, stomped: false, stompLife: 0,
+              heavyBall: true
+            };
+            bullets.push(ball);
+          }
+          shotTimers[0] = Math.max(0.62, 1.45 - tier * 0.055);
+        }
+        // ときどき左右から重い球を低く転がして、ジャンプを要求する。
+        if (radialTimers[0] <= 0) {
+          for (const side of [0, W]) {
+            bullets.push({
+              x: side, y: H - 30, vx: side === 0 ? 185 + tier * 10 : -185 - tier * 10,
+              vy: -45, r: 11, color: "#ffad55", dead: false,
+              gravity: true, gravityAccel: 320, bounce: true, bounceCount: 0,
+              stomped: false, stompLife: 0, heavyBall: true
+            });
+          }
+          radialTimers[0] = Math.max(1.0, 2.25 - tier * 0.06);
+        }
       }
     } else {
       // WORLD 1のステージ攻撃ロジック
@@ -1132,7 +1168,8 @@
       shotTimers[0] -= dt * attackRateMultiplier;
       if (shotTimers[0] <= 0) {
         // 画面端に限定せず、戦闘画面のどこにでも警告ポータルを出す。
-        const count = Math.min(22, 8 + tier * 2);
+        // 最初は4個。30秒ごとに少しずつ増えていく。
+        const count = Math.min(22, 4 + tier * 2);
         for (let n = 0; n < count; n++) strikeWarnings.push({ x: rand(30, W - 30), y: rand(65, H - 35), life: rand(0.55, 0.9), fired: false });
         shotTimers[0] = Math.max(0.28, 0.92 - tier * 0.055);
       }
@@ -1238,8 +1275,27 @@
         bullet.vx = Math.cos(angle) * speed;
         bullet.vy = Math.sin(angle) * speed;
       }
-      bullet.x += bullet.vx * dt;
-      bullet.y += bullet.vy * dt;
+      const previousBulletY = bullet.y;
+      if (bullet.gravity && !bullet.stomped) bullet.vy += (bullet.gravityAccel || 260) * dt;
+      if (bullet.stomped) {
+        bullet.stompLife = (bullet.stompLife ?? 1.5) - dt;
+        if (bullet.stompLife <= 0) bullet.dead = true;
+      } else {
+        bullet.x += bullet.vx * dt;
+        bullet.y += bullet.vy * dt;
+      }
+
+      if (bullet.bounce && !bullet.stomped && bullet.y + bullet.r >= H - 8 && bullet.vy > 0) {
+        bullet.y = H - 8 - bullet.r;
+        bullet.vy = -Math.max(95, Math.abs(bullet.vy) * (bullet.heavyBall ? 0.72 : 0.58));
+        bullet.vx *= bullet.heavyBall ? 0.94 : 0.82;
+        bullet.bounceCount = (bullet.bounceCount || 0) + 1;
+        if (bullet.bounceCount > (bullet.heavyBall ? 5 : 2)) bullet.dead = true;
+      }
+      if (bullet.bounce && !bullet.stomped && bullet.y - bullet.r <= 45 && bullet.vy < 0) {
+        bullet.y = 45 + bullet.r;
+        bullet.vy = Math.abs(bullet.vy) * 0.55;
+      }
 
       if (bullet.waveSide === "top" && bullet.y >= bullet.waveStopY) {
         bullet.y = bullet.waveStopY;
@@ -1260,8 +1316,27 @@
         if (bullet.waveLife <= 0) bullet.dead = true;
       }
 
+      // WORLD 2では、落下中の弾の上に着地して踏める。踏まれた弾は短時間だけ足場になる。
+      const fallingOntoBall =
+        world === 2 && !bullet.dead && !bullet.stomped &&
+        gravityVelocity >= 0 && bullet.vy >= 0 &&
+        previousPlayerY + player.r <= bullet.y - bullet.r + 8 &&
+        player.y + player.r >= bullet.y - bullet.r &&
+        Math.abs(player.x - bullet.x) < player.r + bullet.r * 0.78;
+      if (fallingOntoBall) {
+        player.y = bullet.y - bullet.r - player.r;
+        gravityVelocity = 0;
+        jumpHoldTime = 0;
+        bullet.stomped = true;
+        bullet.stompLife = 1.4;
+        bullet.vx = 0;
+        bullet.vy = 0;
+        continue;
+      }
+
       if (
         !bullet.dead &&
+        !bullet.stomped &&
         player.invuln <= 0 &&
         Math.hypot(player.x - bullet.x, player.y - bullet.y) <
           player.r + bullet.r
@@ -1337,8 +1412,8 @@
     }
 
     bullets = bullets.filter(b =>
-      !b.dead && b.x > -40 && b.x < W + 40 &&
-      b.y > -40 && b.y < H + 40
+      !b.dead && b.x > -70 && b.x < W + 70 &&
+      b.y > -70 && b.y < H + 70
     );
 
     for (const p of particles) {
@@ -1839,7 +1914,14 @@
       ctx.restore();
     }
 
-    for (const bullet of bullets) drawBullet(bullet);
+    for (const bullet of bullets) {
+      if (bullet.stomped) {
+        ctx.globalAlpha = 0.75;
+        rect(bullet.x - bullet.r - 2, bullet.y - bullet.r - 2, (bullet.r + 2) * 2, (bullet.r + 2) * 2, "#7cecff");
+        ctx.globalAlpha = 1;
+      }
+      drawBullet(bullet);
+    }
 
     for (const p of particles) {
       ctx.globalAlpha = clamp(p.life / 0.35, 0, 1);
