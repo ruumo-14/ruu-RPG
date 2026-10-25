@@ -834,9 +834,19 @@
       } else if (stage === 7) {
         if(shotTimers[0]<=0){const count=Math.min(7,2+Math.floor(tier/2));for(let k=0;k<count;k++)fireHoming({x:rand(30,W-30),y:rand(55,H*0.45)},125+tier*10,k%2?"#bca5ff":"#7cecff");shotTimers[0]=Math.max(0.42,1-tier*0.035);}
       } else if (stage === 8) {
-        if(shotTimers[0]<=0){for(let k=0,count=Math.min(18,5+tier*2);k<count;k++)strikeWarnings.push({x:rand(35,W-35),y:rand(65,H-35),life:rand(0.45,0.8),fired:false,world2Portal:true});shotTimers[0]=Math.max(0.3,0.95-tier*0.04);}
-        for(const warning of strikeWarnings){if(!warning.world2Portal)continue;warning.life-=dt;if(warning.life<=0&&!warning.fired){warning.fired=true;const count=10+Math.min(10,tier);for(let k=0;k<count;k++)fire(warning.x,warning.y,patternTick*0.5+k*Math.PI*2/count,145+tier*12,"#7cecff",4);}}
-        strikeWarnings=strikeWarnings.filter(w=>!w.world2Portal||w.life>-0.12);
+        // 画面内のランダムな地点から、重力で曲がる小さな弾の群れが噴き出す。
+        if (shotTimers[0] <= 0) {
+          const portals = Math.min(9, 3 + Math.floor(tier / 2));
+          for (let p = 0; p < portals; p++) {
+            const x = rand(35, W - 35), y = rand(65, H - 70);
+            const count = 5 + Math.min(5, tier);
+            const base = rand(0, Math.PI * 2);
+            for (let k = 0; k < count; k++) {
+              fire(x, y, base + k * Math.PI * 2 / count, 115 + tier * 9, "#7cecff", 4);
+            }
+          }
+          shotTimers[0] = Math.max(0.38, 1.0 - tier * 0.04);
+        }
       } else if (stage === 9) {
         if(shotTimers[0]<=0){const count=Math.min(24,8+tier*2);for(let k=0;k<count;k++){const t=(k+0.5)/count;fire(-8,t*H,rand(-0.32,0.32),210+tier*14,"#7cecff",4);fire(W+8,t*H,Math.PI+rand(-0.32,0.32),210+tier*14,"#bca5ff",4);fire(t*W,-8,Math.PI/2+rand(-0.32,0.32),210+tier*14,"#ffad55",4);fire(t*W,H+8,-Math.PI/2+rand(-0.32,0.32),210+tier*14,"#ff6575",4);}shotTimers[0]=Math.max(0.5,1.25-tier*0.04);}
       } else if (stage === 10) {
