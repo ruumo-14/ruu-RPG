@@ -642,7 +642,8 @@
       bounce: world2,
       bounceCount: 0,
       stomped: false,
-      stompLife: 0
+      stompLife: 0,
+      stompable: world2 && radius >= 9
     });
   }
 
@@ -797,12 +798,23 @@
       const jumpHeld = keys.has("ArrowUp") || keys.has("KeyW") || keys.has("Space") || touchDirs.has("up");
       if (grounded) {
         player.y = stompPlatform ? stompPlatform.y - stompPlatform.r - player.r : H - 19;
-        gravityVelocity = 0;
-        if (jumpHeld) { gravityVelocity = -260; jumpHoldTime = 0; }
-      } else if (gravityVelocity < 0 && jumpHeld && jumpHoldTime < 0.42) {
-        // Hold jump with near-zero gravity so the maximum jump height stays close to the old value.
-        jumpHoldTime += dt; gravityVelocity += 0 * dt;
-      } else gravityVelocity += 760 * dt;
+        if (jumpHeld) {
+          gravityVelocity = -300;
+          jumpHoldTime = 0;
+        } else {
+          gravityVelocity = 0;
+        }
+      }
+      if (!grounded || gravityVelocity < 0) {
+        if (gravityVelocity < 0 && jumpHeld && jumpHoldTime < 0.42) {
+          // 押し続けている間だけ上昇を長く維持。短押しならすぐ落下へ。
+          jumpHoldTime += dt;
+          gravityVelocity += 190 * dt;
+        } else {
+          if (gravityVelocity < -110 && !jumpHeld) gravityVelocity *= 0.82;
+          gravityVelocity += 900 * dt;
+        }
+      }
       player.y = clamp(player.y + gravityVelocity * dt, 45, H - 19);
       if (player.y >= H - 19) { gravityVelocity = 0; jumpHoldTime = 0; }
     }
@@ -850,34 +862,47 @@
       } else if (stage === 9) {
         if(shotTimers[0]<=0){const count=Math.min(24,8+tier*2);for(let k=0;k<count;k++){const t=(k+0.5)/count;fire(-8,t*H,rand(-0.32,0.32),210+tier*14,"#7cecff",4);fire(W+8,t*H,Math.PI+rand(-0.32,0.32),210+tier*14,"#bca5ff",4);fire(t*W,-8,Math.PI/2+rand(-0.32,0.32),210+tier*14,"#ffad55",4);fire(t*W,H+8,-Math.PI/2+rand(-0.32,0.32),210+tier*14,"#ff6575",4);}shotTimers[0]=Math.max(0.5,1.25-tier*0.04);}
       } else if (stage === 10) {
-        // 最終ステージは放射弾をやめ、巨大な重力球が上から落下して床で跳ねる攻撃に変更。
+        // SANS風の最終戦：骨の壁が床からせり上がり、巨大な重力球が上から落ちる。
         if (shotTimers[0] <= 0) {
-          const lanes = Math.min(7, 3 + Math.floor(tier / 2));
-          for (let k = 0; k < lanes; k++) {
-            const x = (k + 0.5) * W / lanes + rand(-22, 22);
-            const ball = {
-              x: clamp(x, 22, W - 22), y: 48,
-              vx: rand(-95, 95), vy: 45 + rand(0, 70),
-              r: 10 + Math.min(8, tier), color: k % 2 ? "#bca5ff" : "#7cecff",
-              dead: false, gravity: true, gravityAccel: 420 + tier * 20,
-              bounce: true, bounceCount: 0, stomped: false, stompLife: 0,
-              heavyBall: true
-            };
-            bullets.push(ball);
-          }
-          shotTimers[0] = Math.max(0.62, 1.45 - tier * 0.055);
-        }
-        // ときどき左右から重い球を低く転がして、ジャンプを要求する。
-        if (radialTimers[0] <= 0) {
-          for (const side of [0, W]) {
+          const lanes = Math.min(8, 3 + Math.floor(tier / 2));
+          const safeLane = Math.floor(rand(0, lanes));
+          for (let lane = 0; lane < lanes; lane++) {
+            if (lane === safeLane) continue;
+            const x = (lane + 0.5) * W / lanes;
             bullets.push({
-              x: side, y: H - 30, vx: side === 0 ? 185 + tier * 10 : -185 - tier * 10,
-              vy: -45, r: 11, color: "#ffad55", dead: false,
-              gravity: true, gravityAccel: 320, bounce: true, bounceCount: 0,
-              stomped: false, stompLife: 0, heavyBall: true
+              x, y: H + 12, vx: 0, vy: -(250 + tier * 14),
+              r: 7, color: "#e8edf4", dead: false, gravity: false,
+              boneWall: true, waveSide: "top", waveStopY: H * 0.43,
+              waveLife: 0.65, stompable: false
             });
           }
-          radialTimers[0] = Math.max(1.0, 2.25 - tier * 0.06);
+          // 落下する大きな球は踏むと即ジャンプできる。
+          const ballCount = Math.min(4, 1 + Math.floor(tier / 2));
+          for (let k = 0; k < ballCount; k++) {
+            const x = rand(35, W - 35);
+            bullets.push({
+              x, y: 50, vx: rand(-35, 35), vy: 35,
+              r: 10 + Math.min(8, tier), color: "#7cecff",
+              dead: false, gravity: true, gravityAccel: 520 + tier * 24,
+              stompable: true, stomped: false, stompLife: 0, heavyBall: true
+            });
+          }
+          shotTimers[0] = Math.max(0.72, 1.55 - tier * 0.05);
+        }
+        // 交互に左右から飛ぶ骨の列。重力で少しずつ落ちる。
+        if (radialTimers[0] <= 0) {
+          const fromLeft = Math.random() < 0.5;
+          const y = rand(H * 0.42, H - 48);
+          for (let k = 0; k < 5; k++) {
+            bullets.push({
+              x: fromLeft ? -12 : W + 12, y: y - k * 17,
+              vx: fromLeft ? 255 + tier * 12 : -255 - tier * 12,
+              vy: -25 + k * 10, r: 6, color: "#e8edf4",
+              dead: false, gravity: true, gravityAccel: 85,
+              stompable: false
+            });
+          }
+          radialTimers[0] = Math.max(0.9, 2.0 - tier * 0.055);
         }
       }
     } else {
@@ -1148,10 +1173,10 @@
     }
 
     // WORLD 1 Stage 7〜10：4種類の異なる攻撃。
-    if (stage === 7) {
-      // 開始時10個。30秒ごとに2個増やし、同時に速度も上げる。
+    if (world === 1 && stage === 7) {
+      // 最初は10個。30秒ごとに2個増やし、同時に速度も上げる。
       const tier = Math.floor(elapsed / 30);
-      const wanted = Math.min(40, 20 + tier * 2);
+      const wanted = Math.min(40, 10 + tier * 2);
       const speed = 165 + tier * 32;
       while (triangles.length < wanted) {
         const a = rand(0, Math.PI * 2);
@@ -1259,7 +1284,7 @@
 
     edgeWarnings = edgeWarnings.filter(w => w.life > -0.6);
 
-    if (stage === 7 && player.invuln <= 0) {
+    if (world === 1 && stage === 7 && player.invuln <= 0) {
       for (const t of triangles) {
         const verts = [[0, -t.size], [t.size * 0.88, t.size * 0.72], [-t.size * 0.88, t.size * 0.72]].map(([x, y]) => ({ x: t.x + x * Math.cos(t.spin) - y * Math.sin(t.spin), y: t.y + x * Math.sin(t.spin) + y * Math.cos(t.spin) }));
         const [a, b, c] = verts;
@@ -1293,23 +1318,11 @@
       const previousBulletY = bullet.y;
       if (bullet.gravity && !bullet.stomped) bullet.vy += (bullet.gravityAccel || 260) * dt;
       if (bullet.stomped) {
-        bullet.stompLife = (bullet.stompLife ?? 1.5) - dt;
+        bullet.stompLife = (bullet.stompLife ?? 0.12) - dt;
         if (bullet.stompLife <= 0) bullet.dead = true;
       } else {
         bullet.x += bullet.vx * dt;
         bullet.y += bullet.vy * dt;
-      }
-
-      if (bullet.bounce && !bullet.stomped && bullet.y + bullet.r >= H - 8 && bullet.vy > 0) {
-        bullet.y = H - 8 - bullet.r;
-        bullet.vy = -Math.max(95, Math.abs(bullet.vy) * (bullet.heavyBall ? 0.72 : 0.58));
-        bullet.vx *= bullet.heavyBall ? 0.94 : 0.82;
-        bullet.bounceCount = (bullet.bounceCount || 0) + 1;
-        if (bullet.bounceCount > (bullet.heavyBall ? 5 : 2)) bullet.dead = true;
-      }
-      if (bullet.bounce && !bullet.stomped && bullet.y - bullet.r <= 45 && bullet.vy < 0) {
-        bullet.y = 45 + bullet.r;
-        bullet.vy = Math.abs(bullet.vy) * 0.55;
       }
 
       if (bullet.waveSide === "top" && bullet.y >= bullet.waveStopY) {
@@ -1333,17 +1346,19 @@
 
       // WORLD 2では、落下中の弾の上に着地して踏める。踏まれた弾は短時間だけ足場になる。
       const fallingOntoBall =
-        world === 2 && !bullet.dead && !bullet.stomped &&
+        world === 2 && bullet.stompable && !bullet.dead && !bullet.stomped &&
         gravityVelocity >= 0 && bullet.vy >= 0 &&
         previousPlayerY + player.r <= bullet.y - bullet.r + 8 &&
         player.y + player.r >= bullet.y - bullet.r &&
         Math.abs(player.x - bullet.x) < player.r + bullet.r * 0.78;
       if (fallingOntoBall) {
         player.y = bullet.y - bullet.r - player.r;
-        gravityVelocity = 0;
+        // 踏んだ瞬間に自動ジャンプ。キーを押していなければ最小ジャンプ、
+        // 長押しすれば上昇時間が延びて飛距離が伸びる。
+        gravityVelocity = -300;
         jumpHoldTime = 0;
         bullet.stomped = true;
-        bullet.stompLife = 1.4;
+        bullet.stompLife = 0.12;
         bullet.vx = 0;
         bullet.vy = 0;
         continue;
