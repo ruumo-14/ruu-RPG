@@ -53,6 +53,7 @@
   let strikeWarnings = [];
   let triangles = [];
   let gravityVelocity = 0;
+  let jumpHoldTime = 0;
   let enemies = [];
   let shotTimers = [];
   let radialTimers = [];
@@ -324,6 +325,7 @@
           accounts[username] = {
             passwordHash,
             gold: 0,
+            demoGoldGranted: false,
             unlockedStages: [1],
             upgrades: {
               speed: 0,
@@ -359,6 +361,8 @@
         currentUser = username;
         localStorage.setItem(SESSION_KEY, username);
         loadUserProgress(accounts[username]);
+        // 一時的な体験用ボーナス。後でこの処理とフラグを削除すること。
+        if (!accounts[username].demoGoldGranted) { gold += 100000000; accounts[username].demoGoldGranted = true; saveAccounts(accounts); saveUserProgress(); }
 
         authRoot.remove();
         authRoot = null;
@@ -492,6 +496,7 @@
     player.x = W / 2;
     player.y = H * 0.78;
     gravityVelocity = 0;
+    jumpHoldTime = 0;
   }
 
   function showTitle() {
@@ -588,6 +593,7 @@
     strikeWarnings = [];
     triangles = [];
     gravityVelocity = 0;
+    jumpHoldTime = 0;
 
     edgeTimer = stage === 2 ? 1.2 : 2.8;
     stage4SwitchTimer = 0.25;
@@ -740,6 +746,7 @@
     // 30秒ごとに弾速倍率を1.5倍にする。
     // 倍率は新しく発射される弾にだけ適用される。
     const speedTier = Math.floor(elapsed / 30);
+    const tier = speedTier;
     bulletSpeedMultiplier = Math.pow(1.5, speedTier);
     // 30秒ごとに弾速・弾数・発射頻度を上げる。
     bulletCountBonus = Math.min(48, speedTier * 3);
@@ -769,12 +776,15 @@
       gravityVelocity = 0;
     } else {
       const grounded = player.y >= H - 19;
+      const jumpHeld = keys.has("ArrowUp") || keys.has("KeyW") || keys.has("Space") || touchDirs.has("up");
       if (grounded) {
         player.y = H - 19; gravityVelocity = 0;
-        if (keys.has("ArrowUp") || keys.has("KeyW") || touchDirs.has("up")) gravityVelocity = -330;
+        if (jumpHeld) { gravityVelocity = -340; jumpHoldTime = 0; }
+      } else if (gravityVelocity < 0 && jumpHeld && jumpHoldTime < 0.42) {
+        jumpHoldTime += dt; gravityVelocity += 250 * dt;
       } else gravityVelocity += 760 * dt;
       player.y = clamp(player.y + gravityVelocity * dt, 45, H - 19);
-      if (player.y >= H - 19) gravityVelocity = 0;
+      if (player.y >= H - 19) { gravityVelocity = 0; jumpHoldTime = 0; }
     }
 
     // ステージ1
@@ -1044,15 +1054,22 @@
 
     // WORLD 1 Stage 7〜10：4種類の異なる攻撃。
     if (stage === 7) {
-      const wanted = 1 + Math.floor(elapsed / 30);
-      while (triangles.length < Math.min(10, wanted)) {
-        const a = rand(0, Math.PI * 2), speed = 145 + Math.floor(elapsed / 30) * 12;
-        triangles.push({ x: rand(W * 0.2, W * 0.8), y: rand(H * 0.2, H * 0.65), vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, size: 30 + Math.min(12, Math.floor(elapsed / 30) * 2), spin: rand(0, Math.PI * 2) });
+      // 開始時10個。30秒ごとに2個増やし、同時に速度も上げる。
+      const tier = Math.floor(elapsed / 30);
+      const wanted = Math.min(40, 10 + tier * 2);
+      const speed = 165 + tier * 32;
+      while (triangles.length < wanted) {
+        const a = rand(0, Math.PI * 2);
+        triangles.push({ x: rand(0, W), y: rand(45, H), vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, size: 34 + Math.min(10, tier * 2), spin: rand(0, Math.PI * 2) });
       }
       for (const t of triangles) {
+        const currentSpeed = Math.hypot(t.vx, t.vy) || speed;
+        const nextSpeed = Math.max(currentSpeed, speed);
+        t.vx = t.vx / currentSpeed * nextSpeed; t.vy = t.vy / currentSpeed * nextSpeed;
         t.x += t.vx * dt; t.y += t.vy * dt; t.spin += dt * 0.65;
-        if (t.x < t.size || t.x > W - t.size) { t.vx *= -1; t.x = clamp(t.x, t.size, W - t.size); }
-        if (t.y < 65 + t.size || t.y > H - 25 - t.size) { t.vy *= -1; t.y = clamp(t.y, 65 + t.size, H - 25 - t.size); }
+        // 中心が端まで行くので、プレイヤーが画面端に隠れても三角形が届く。
+        if (t.x < 0 || t.x > W) { t.vx *= -1; t.x = clamp(t.x, 0, W); }
+        if (t.y < 45 || t.y > H) { t.vy *= -1; t.y = clamp(t.y, 45, H); }
       }
     } else if (stage === 8) {
       shotTimers[0] -= dt * attackRateMultiplier;
@@ -1079,7 +1096,7 @@
         for (let lane = 0; lane < lanes; lane++) { if (lane === gapLane) continue; const x = (lane + 0.5) * W / lanes; fire(x, H + 8, -Math.PI / 2, 190 + tier * 12, C.purple, 4); if (tier >= 2 && lane % 2 === 0) fire(x + 8, H + 8, -Math.PI / 2, 225 + tier * 12, C.blue, 3); }
         shotTimers[0] = Math.max(0.62, 1.35 - tier * 0.06);
       }
-      if (radialTimers[0] <= 0) { radialShot(boss, 10 + tier * 2, 105 + tier * 8, patternTick * 0.38, C.orange); radialTimers[0] = Math.max(1.05, 2.6 - tier * 0.08); }
+      if (radialTimers[0] <= 0) { radialShot(enemies[0], 10 + tier * 2, 105 + tier * 8, patternTick * 0.38, C.orange); radialTimers[0] = Math.max(1.05, 2.6 - tier * 0.08); }
     }
 
     // Stage 8: 警告マークが消えた位置から放射状に弾を発射。
@@ -1114,8 +1131,22 @@
 
     edgeWarnings = edgeWarnings.filter(w => w.life > -0.6);
 
-    if (stage === 7 && player.invuln <= 0) for (const t of triangles) {
-      if (Math.hypot(player.x - t.x, player.y - t.y) < t.size * 0.62 + player.r) { player.lives--; player.invuln = 1.15 + upgrades.guard * 0.35; hitFlash = 0.2; break; }
+    if (stage === 7 && player.invuln <= 0) {
+      for (const t of triangles) {
+        const verts = [[0, -t.size], [t.size * 0.88, t.size * 0.72], [-t.size * 0.88, t.size * 0.72]].map(([x, y]) => ({ x: t.x + x * Math.cos(t.spin) - y * Math.sin(t.spin), y: t.y + x * Math.sin(t.spin) + y * Math.cos(t.spin) }));
+        const [a, b, c] = verts;
+        const d1 = (player.x - b.x) * (a.y - b.y) - (a.x - b.x) * (player.y - b.y);
+        const d2 = (player.x - c.x) * (b.y - c.y) - (b.x - c.x) * (player.y - c.y);
+        const d3 = (player.x - a.x) * (c.y - a.y) - (c.x - a.x) * (player.y - a.y);
+        const inside = !((d1 < 0 || d2 < 0 || d3 < 0) && (d1 > 0 || d2 > 0 || d3 > 0));
+        const nearSegment = (p, q) => { const vx = q.x-p.x, vy = q.y-p.y; const f = clamp(((player.x-p.x)*vx+(player.y-p.y)*vy)/(vx*vx+vy*vy||1),0,1); return Math.hypot(player.x-(p.x+vx*f),player.y-(p.y+vy*f)) <= player.r+4; };
+        if (inside || nearSegment(a,b) || nearSegment(b,c) || nearSegment(c,a)) {
+          player.lives--; player.invuln = 1.15 + upgrades.guard * 0.35; hitFlash = 0.2;
+          if (player.lives <= 0 && upgrades.revive > 0 && !reviveUsed) { reviveUsed=true; player.lives=1; player.invuln=2.5; bullets=[]; edgeWarnings=[]; triangles=[]; showMessage("リバイブ発動！"); }
+          else if (player.lives <= 0) { mode="gameover"; menuIndex=0; bullets=[]; edgeWarnings=[]; triangles=[]; saveUserProgress(); }
+          break;
+        }
+      }
     }
     for (const bullet of bullets) {
       // 発射時に速度倍率を適用済みなので、移動中は倍率を掛けない。
@@ -2380,6 +2411,8 @@
     if (savedUsername && accounts[savedUsername] && !accounts[savedUsername].banned) {
       currentUser = savedUsername;
       loadUserProgress(accounts[savedUsername]);
+      // 一時的な体験用ボーナス。後でこの処理とフラグを削除すること。
+      if (!accounts[savedUsername].demoGoldGranted) { gold += 100000000; accounts[savedUsername].demoGoldGranted = true; saveAccounts(accounts); saveUserProgress(); }
       showTitle();
     } else {
       currentUser = null;
