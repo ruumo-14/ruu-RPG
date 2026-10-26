@@ -816,26 +816,26 @@
       gravityVelocity = 0;
     } else {
       // WORLD 2は床でのみ通常ジャンプ。踏みつけジャンプは弾との衝突時に直接発動する。
-      const grounded = player.y >= H - 19 - 0.5;
+      const previousY = player.y;
+      const downHeld = keys.has("ArrowDown") || keys.has("KeyS") || touchDirs.has("down");
+      if (downHeld && !downWasHeld) {
+        const standingOn = world2Platforms.find(p => Math.abs((player.y + player.r) - p.y) < 5 && player.x >= p.x - player.r && player.x <= p.x + p.w + player.r);
+        if (standingOn) { platformDropTimer = 0.24; player.y += 5; gravityVelocity = 90; }
+      }
+      downWasHeld = downHeld;
+      platformDropTimer = Math.max(0, platformDropTimer - dt);
       const jumpHeld = keys.has("ArrowUp") || keys.has("KeyW") || keys.has("Space") || touchDirs.has("up");
       const jumpPressed = jumpHeld && !jumpWasHeld;
+      const standingPlatform = platformDropTimer <= 0 ? world2Platforms.find(p => gravityVelocity >= 0 && previousY + player.r <= p.y + 2 && player.y + player.r >= p.y && player.x + player.r > p.x && player.x - player.r < p.x + p.w) : null;
+      const grounded = player.y >= H - 19 - 0.5 || !!standingPlatform;
       if (grounded) {
-        player.y = H - 19;
-        if (jumpPressed) {
-          gravityVelocity = -420;
-          jumpHoldTime = 0;
-        } else {
-          gravityVelocity = 0;
-        }
+        if (standingPlatform) player.y = standingPlatform.y - player.r;
+        else player.y = H - 19;
+        if (jumpPressed) { gravityVelocity = -430; jumpHoldTime = 0; } else gravityVelocity = 0;
       }
       if (!grounded || gravityVelocity < 0) {
-        if (gravityVelocity < 0 && jumpHeld && jumpHoldTime < 0.34) {
-          // 短押しは低く、長押しは重力を弱めて高く跳ぶ。
-          jumpHoldTime += dt;
-          gravityVelocity += 180 * dt;
-        } else {
-          gravityVelocity += 1250 * dt;
-        }
+        if (gravityVelocity < 0 && jumpHeld && jumpHoldTime < 0.42) { jumpHoldTime += dt; gravityVelocity += 120 * dt; }
+        else gravityVelocity += 1120 * dt;
       }
       jumpWasHeld = jumpHeld;
       player.y = clamp(player.y + gravityVelocity * dt, 45, H - 19);
@@ -843,132 +843,58 @@
     }
 
     if (world === 2) {
-      // WORLD 2は全10ステージを専用攻撃で構成。
+      // WORLD 2：骨・青い魂・予告攻撃を使う高難度バトルに再構成。
       const e = enemies[0] || { x: W * 0.5, y: H * 0.2 };
       shotTimers[0] = (shotTimers[0] ?? 0) - dt * attackRateMultiplier;
       radialTimers[0] = (radialTimers[0] ?? 0) - dt * attackRateMultiplier;
-      // WORLD 2 stages 1-9 share a rising difficulty platforming layer:
-      // low bone rows demand a timed jump, while heavy falling balls can be stomped.
-      if (stage < 10) {
-        world2BoneTimer -= dt * attackRateMultiplier;
-        world2BallTimer -= dt * attackRateMultiplier;
-        if (world2BoneTimer <= 0) {
-          const count = Math.min(10, 5 + Math.floor(stage / 2) + Math.floor(tier / 2));
-          const gap = Math.floor(rand(0, count));
-          const fromLeft = Math.random() < 0.5;
-          const rows = stage >= 6 ? 2 : 1;
-          for (let row = 0; row < rows; row++) {
-            const rowGap = row === 0 ? gap : (gap + Math.max(2, Math.floor(count / 2))) % count;
-            for (let k = 0; k < count; k++) {
-              if (k === rowGap) continue;
-              bullets.push({
-                x: fromLeft ? -14 - row * 20 : W + 14 + row * 20,
-                y: H - 23 - row * 13 + rand(-2, 2),
-                vx: (fromLeft ? 1 : -1) * (190 + stage * 12 + tier * 18),
-                vy: rand(-8, 8), r: 6, color: row ? "#bca5ff" : "#e8edf4",
-                dead: false, gravity: true, gravityAccel: 80 + stage * 8,
-                bone: true, stompable: false
-              });
-            }
-          }
-          world2BoneTimer = Math.max(1.25, 3.6 - stage * 0.19 - tier * 0.12);
-        }
-        if (world2BallTimer <= 0) {
-          const count = stage >= 7 ? 2 : 1;
-          for (let i = 0; i < count; i++) {
-            bullets.push({
-              x: rand(35, W - 35), y: rand(24, 72),
-              vx: rand(-45, 45), vy: 70 + stage * 8,
-              r: 11 + Math.min(7, Math.floor(stage / 2) + Math.floor(tier / 2)),
-              color: i % 2 ? "#bca5ff" : "#7cecff", dead: false,
-              gravity: true, gravityAccel: 760 + stage * 55 + tier * 35,
-              stompable: true, stomped: false, stompLife: 0, heavyBall: true
-            });
-          }
-          world2BallTimer = Math.max(1.1, 2.9 - stage * 0.13 - tier * 0.1);
-        }
-      }
-
-      if (stage === 1) {
-        if (shotTimers[0] <= 0) {
-          for (let k=0;k<6;k++) { const a=patternTick*0.55+k*Math.PI/3; fire(e.x,e.y,a,155+tier*8,"#7cecff",4); fire(e.x,e.y,a+Math.PI/6,115+tier*6,"#bca5ff",3); }
-          shotTimers[0]=Math.max(0.42,1.05-tier*0.04);
-        }
-      } else if (stage === 2) {
-        if (shotTimers[0] <= 0) {
-          const count=9+Math.min(9,tier);
-          for(let k=0;k<count;k++){const a=patternTick*0.9+k*Math.PI*2/count;fire(0,H*0.5,a,135+tier*9,"#7cecff",4);fire(W,H*0.5,a+Math.PI,135+tier*9,"#bca5ff",4);}
-          shotTimers[0]=Math.max(0.55,1.3-tier*0.04);
-        }
-      } else if (stage === 3) {
-        if(shotTimers[0]<=0){const angle=Math.sin(patternTick*1.7)*0.6;for(let k=-4;k<=4;k++)fire(e.x,e.y,Math.PI/2+angle+k*0.16,175+tier*10,"#bca5ff",4);shotTimers[0]=Math.max(0.3,0.82-tier*0.035);}
-      } else if (stage === 4) {
-        if(shotTimers[0]<=0){for(let k=0,count=Math.min(24,8+tier*2);k<count;k++)fire(rand(12,W-12),42,Math.PI/2+rand(-0.5,0.5),160+tier*12,"#ffad55",4);shotTimers[0]=Math.max(0.38,1.1-tier*0.04);}
-      } else if (stage === 5) {
-        if(shotTimers[0]<=0){radialShot(e,20+Math.min(16,tier*2),115+tier*8,patternTick*0.3,"#7cecff");radialShot(e,12+Math.min(12,tier),175+tier*9,-patternTick*0.22,"#bca5ff");shotTimers[0]=Math.max(0.7,1.65-tier*0.045);}
-      } else if (stage === 6) {
-        if(shotTimers[0]<=0){const corners=[[0,45,0.55],[W,45,Math.PI-0.55],[0,H,-0.55],[W,H,Math.PI+0.55]];for(const [x,y,a] of corners)for(let k=-2;k<=2;k++)fire(x,y,a+k*0.08,210+tier*12,"#7cecff",4);shotTimers[0]=Math.max(0.6,1.45-tier*0.04);}
-      } else if (stage === 7) {
-        if(shotTimers[0]<=0){const count=Math.min(7,2+Math.floor(tier/2));for(let k=0;k<count;k++)fireHoming({x:rand(30,W-30),y:rand(55,H*0.45)},125+tier*10,k%2?"#bca5ff":"#7cecff");shotTimers[0]=Math.max(0.42,1-tier*0.035);}
-      } else if (stage === 8) {
-        // 画面内のランダムな地点から、重力で曲がる小さな弾の群れが噴き出す。
-        if (shotTimers[0] <= 0) {
-          const portals = Math.min(9, 3 + Math.floor(tier / 2));
-          for (let p = 0; p < portals; p++) {
-            const x = rand(35, W - 35), y = rand(65, H - 70);
-            const count = 5 + Math.min(5, tier);
-            const base = rand(0, Math.PI * 2);
-            for (let k = 0; k < count; k++) {
-              fire(x, y, base + k * Math.PI * 2 / count, 115 + tier * 9, "#7cecff", 4);
-            }
-          }
-          shotTimers[0] = Math.max(0.38, 1.0 - tier * 0.04);
-        }
-      } else if (stage === 9) {
-        if(shotTimers[0]<=0){const count=Math.min(24,8+tier*2);for(let k=0;k<count;k++){const t=(k+0.5)/count;fire(-8,t*H,rand(-0.32,0.32),210+tier*14,"#7cecff",4);fire(W+8,t*H,Math.PI+rand(-0.32,0.32),210+tier*14,"#bca5ff",4);fire(t*W,-8,Math.PI/2+rand(-0.32,0.32),210+tier*14,"#ffad55",4);fire(t*W,H+8,-Math.PI/2+rand(-0.32,0.32),210+tier*14,"#ff6575",4);}shotTimers[0]=Math.max(0.5,1.25-tier*0.04);}
-      } else if (stage === 10) {
-        // SANS風の最終戦：骨の壁が床からせり上がり、巨大な重力球が上から落ちる。
-        if (shotTimers[0] <= 0) {
-          const lanes = Math.min(8, 3 + Math.floor(tier / 2));
-          const safeLane = Math.floor(rand(0, lanes));
+      world2BoneTimer -= dt * attackRateMultiplier;
+      world2BallTimer -= dt * attackRateMultiplier;
+      if (world2BoneTimer <= 0) {
+        const lanes = Math.min(14, 5 + stage + Math.floor(tier / 2));
+        const gap = Math.floor(rand(0, lanes));
+        const rows = stage >= 6 ? 2 : 1;
+        for (let row = 0; row < rows; row++) {
+          const safeLane = row === 0 ? gap : (gap + Math.ceil(lanes / 2)) % lanes;
+          const fromLeft = (Math.floor(elapsed / 3) + row + stage) % 2 === 0;
           for (let lane = 0; lane < lanes; lane++) {
             if (lane === safeLane) continue;
-            const x = (lane + 0.5) * W / lanes;
-            bullets.push({
-              x, y: H + 12, vx: 0, vy: -(250 + tier * 14),
-              r: 7, color: "#e8edf4", dead: false, gravity: false,
-              boneWall: true, waveSide: "bottom", waveStopY: H * 0.43,
-              waveLife: 0.65, stompable: false
-            });
+            bullets.push({ x: fromLeft ? -12 : W + 12, y: H - 22 - row * 20, vx: (fromLeft ? 1 : -1) * (180 + stage * 18 + tier * 22), vy: 0, r: 6, color: row ? "#bca5ff" : "#e8edf4", dead: false, gravity: false, bone: true, stompable: false });
+            if (stage >= 8 && lane % 2 === 0) bullets.push({ x: (lane + .5) * W / lanes, y: -10, vx: 0, vy: 165 + stage * 13 + tier * 16, r: 5, color: "#7cecff", dead: false, gravity: false, stompable: false });
           }
-          // 落下する大きな球は踏むと即ジャンプできる。
-          const ballCount = Math.min(4, 1 + Math.floor(tier / 2));
-          for (let k = 0; k < ballCount; k++) {
-            const x = rand(35, W - 35);
-            bullets.push({
-              x, y: 50, vx: rand(-35, 35), vy: 35,
-              r: 10 + Math.min(8, tier), color: "#7cecff",
-              dead: false, gravity: true, gravityAccel: 520 + tier * 24,
-              stompable: true, stomped: false, stompLife: 0, heavyBall: true
-            });
-          }
-          shotTimers[0] = Math.max(0.72, 1.55 - tier * 0.05);
         }
-        // 交互に左右から飛ぶ骨の列。重力で少しずつ落ちる。
-        if (radialTimers[0] <= 0) {
-          const fromLeft = Math.random() < 0.5;
-          const y = rand(H * 0.42, H - 48);
-          for (let k = 0; k < 5; k++) {
-            bullets.push({
-              x: fromLeft ? -12 : W + 12, y: y - k * 17,
-              vx: fromLeft ? 255 + tier * 12 : -255 - tier * 12,
-              vy: -25 + k * 10, r: 6, color: "#e8edf4",
-              dead: false, gravity: true, gravityAccel: 85,
-              stompable: false
-            });
-          }
-          radialTimers[0] = Math.max(0.9, 2.0 - tier * 0.055);
+        world2BoneTimer = Math.max(.85, 3.1 - stage * .19 - tier * .13);
+      }
+      if (world2BallTimer <= 0 && stage >= 3) {
+        const count = Math.min(4, 1 + Math.floor(stage / 3) + Math.floor(tier / 2));
+        for (let i = 0; i < count; i++) {
+          const x = rand(28, W - 28), y = 55 + (i % 2) * 55;
+          const a = Math.atan2(player.y - y, player.x - x);
+          bullets.push({ x, y, vx: Math.cos(a) * (105 + stage * 8), vy: Math.sin(a) * (105 + stage * 8), r: 5 + (stage >= 7 ? 2 : 0), color: "#7cecff", dead: false, gravity: false, stompable: false });
         }
+        world2BallTimer = Math.max(.8, 2.6 - stage * .15 - tier * .11);
+      }
+      const aim = () => Math.atan2(player.y - e.y, player.x - e.x);
+      if (stage === 1) {
+        if (shotTimers[0] <= 0) { const a=aim(); for(let k=-2;k<=2;k++) fire(e.x,e.y,a+k*.18,175+tier*10,"#7cecff",4); shotTimers[0]=Math.max(.55,1.3-tier*.06); }
+      } else if (stage === 2) {
+        if (shotTimers[0] <= 0) { const n=10+Math.min(12,tier*2); for(let k=0;k<n;k++){const a=patternTick*.6+k*Math.PI*2/n;fire(k%2?0:W,rand(70,H-60),a,145+tier*12,k%2?"#bca5ff":"#7cecff",4);} shotTimers[0]=Math.max(.65,1.45-tier*.06); }
+      } else if (stage === 3) {
+        if (shotTimers[0] <= 0) { for(let k=0;k<7;k++){const x=(k+.5)*W/7;fire(x,35,Math.PI/2+Math.sin(patternTick+k)*.22,205+tier*12,"#7cecff",4);} shotTimers[0]=Math.max(.5,1.25-tier*.05); }
+      } else if (stage === 4) {
+        if (shotTimers[0] <= 0) { const gap=Math.floor(rand(0,9));for(let k=0;k<9;k++)if(k!==gap)fire((k+.5)*W/9,H*.34,Math.PI/2,190+tier*13,"#e8edf4",5); shotTimers[0]=Math.max(.48,1.15-tier*.05); }
+      } else if (stage === 5) {
+        if (shotTimers[0] <= 0) { const n=12+Math.min(20,tier*2);for(let k=0;k<n;k++){const a=patternTick*.45+k*Math.PI*2/n;fire(e.x,e.y,a,125+tier*11,"#7cecff",4);}for(let k=0;k<5;k++)fire(rand(20,W-20),-8,Math.PI/2,185+tier*12,"#bca5ff",5);shotTimers[0]=Math.max(.55,1.35-tier*.055); }
+      } else if (stage === 6) {
+        if (shotTimers[0] <= 0) { const side=Math.floor(rand(0,4)), n=8+Math.min(10,tier);for(let k=0;k<n;k++){const t=(k+.5)/n;const x=side<2?(side===0?0:W):t*W;const y=side>=2?(side===2?0:H):t*H;fire(x,y,Math.atan2(player.y-y,player.x-x)+(k%2?.12:-.12),195+tier*14,"#bca5ff",4);}shotTimers[0]=Math.max(.5,1.2-tier*.05); }
+      } else if (stage === 7) {
+        if (shotTimers[0] <= 0) { for(let k=0;k<3+Math.min(5,Math.floor(tier/2));k++)fireHoming({x:rand(30,W-30),y:rand(45,H*.4)},145+tier*12,k%2?"#bca5ff":"#7cecff");shotTimers[0]=Math.max(.42,.95-tier*.04); }
+      } else if (stage === 8) {
+        if (shotTimers[0] <= 0) { const gap=Math.floor(rand(0,7));for(let k=0;k<7;k++){const x=(k+.5)*W/7;if(k!==gap){fire(x,0,Math.PI/2,210+tier*15,"#e8edf4",5);fire(W-x,H,-Math.PI/2,190+tier*14,"#bca5ff",5);}}shotTimers[0]=Math.max(.45,1.1-tier*.05); }
+      } else if (stage === 9) {
+        if (shotTimers[0] <= 0) { const gap=Math.floor(rand(0,5));for(let k=0;k<5;k++){const x=(k+.5)*W/5;if(k!==gap){fire(x,0,Math.PI/2,225+tier*15,"#e8edf4",6);fire(x,H,-Math.PI/2,225+tier*15,"#e8edf4",6);}}for(let k=0;k<6;k++)fire(rand(20,W-20),rand(70,H-80),aim(),155+tier*12,"#7cecff",4);shotTimers[0]=Math.max(.4,1-tier*.05); }
+      } else if (stage === 10) {
+        if (shotTimers[0] <= 0) { const lanes=Math.min(16,7+Math.floor(tier/2)), gap=Math.floor(rand(0,lanes));for(let k=0;k<lanes;k++)if(k!==gap)bullets.push({x:(k+.5)*W/lanes,y:H+8,vx:0,vy:-(300+tier*20),r:7,color:"#e8edf4",dead:false,gravity:false,boneWall:true,waveSide:"bottom",waveStopY:H*.35,waveLife:.8,stompable:false});shotTimers[0]=Math.max(.35,.95-tier*.04); }
+        if (radialTimers[0] <= 0) { const a=aim();for(let k=-4;k<=4;k++)fire(e.x,e.y,a+k*.13,220+tier*16,"#7cecff",4);radialTimers[0]=Math.max(.35,.85-tier*.04); }
       }
     } else {
       // WORLD 1のステージ攻撃ロジック
