@@ -815,30 +815,36 @@
       player.y = clamp(player.y + dy * player.speed * speedMultiplier * dt, 45, H - 18);
       gravityVelocity = 0;
     } else {
-      // WORLD 2は床でのみ通常ジャンプ。踏みつけジャンプは弾との衝突時に直接発動する。
+      // One-way platforms: land only while falling from above; DOWN drops through.
       const previousY = player.y;
       const downHeld = keys.has("ArrowDown") || keys.has("KeyS") || touchDirs.has("down");
       if (downHeld && !downWasHeld) {
-        const standingOn = world2Platforms.find(p => Math.abs((player.y + player.r) - p.y) < 5 && player.x >= p.x - player.r && player.x <= p.x + p.w + player.r);
-        if (standingOn) { platformDropTimer = 0.24; player.y += 5; gravityVelocity = 90; }
+        const standingOn = world2Platforms.find(p => Math.abs((player.y + player.r) - p.y) < 4 && player.x >= p.x - player.r && player.x <= p.x + p.w + player.r);
+        if (standingOn) { platformDropTimer = 0.28; player.y += 6; gravityVelocity = 80; }
       }
       downWasHeld = downHeld;
       platformDropTimer = Math.max(0, platformDropTimer - dt);
       const jumpHeld = keys.has("ArrowUp") || keys.has("KeyW") || keys.has("Space") || touchDirs.has("up");
       const jumpPressed = jumpHeld && !jumpWasHeld;
-      const standingPlatform = platformDropTimer <= 0 ? world2Platforms.find(p => gravityVelocity >= 0 && previousY + player.r <= p.y + 2 && player.y + player.r >= p.y && player.x + player.r > p.x && player.x - player.r < p.x + p.w) : null;
-      const grounded = player.y >= H - 19 - 0.5 || !!standingPlatform;
+      const platformUnderFeet = platformDropTimer <= 0 ? world2Platforms.find(p => Math.abs(player.y + player.r - p.y) < 2 && player.x + player.r > p.x && player.x - player.r < p.x + p.w) : null;
+      const grounded = player.y >= H - 19 - 0.5 || !!platformUnderFeet;
       if (grounded) {
-        if (standingPlatform) player.y = standingPlatform.y - player.r;
+        if (platformUnderFeet) player.y = platformUnderFeet.y - player.r;
         else player.y = H - 19;
-        if (jumpPressed) { gravityVelocity = -430; jumpHoldTime = 0; } else gravityVelocity = 0;
+        if (jumpPressed) { gravityVelocity = -430; jumpHoldTime = 0; }
+        else gravityVelocity = 0;
       }
       if (!grounded || gravityVelocity < 0) {
         if (gravityVelocity < 0 && jumpHeld && jumpHoldTime < 0.42) { jumpHoldTime += dt; gravityVelocity += 120 * dt; }
         else gravityVelocity += 1120 * dt;
       }
       jumpWasHeld = jumpHeld;
-      player.y = clamp(player.y + gravityVelocity * dt, 45, H - 19);
+      const nextY = player.y + gravityVelocity * dt;
+      const landingPlatform = platformDropTimer <= 0 && gravityVelocity >= 0
+        ? world2Platforms.find(p => previousY + player.r <= p.y && nextY + player.r >= p.y && player.x + player.r > p.x && player.x - player.r < p.x + p.w)
+        : null;
+      if (landingPlatform) { player.y = landingPlatform.y - player.r; gravityVelocity = 0; jumpHoldTime = 0; }
+      else player.y = clamp(nextY, 45, H - 19);
       if (player.y >= H - 19) { gravityVelocity = 0; jumpHoldTime = 0; }
     }
 
@@ -1677,7 +1683,7 @@
       if (y < 85 || y > H - 48) continue;
 
       drawButton(
-        `${s.id}. ${unlockedStages.has(s.id) ? "PLAY" : "LOCKED"} - ${s.name} / ${s.reward}G`,
+        `${s.id}. ${unlockedStages.has(s.id) ? "PLAY" : "LOCKED"} - ${getStageName(s)} / ${s.reward}G`,
         W / 2, y, menuIndex === i,
         Math.min(W - 30, 420), 34
       );
@@ -1853,7 +1859,7 @@
       ctx.rect(labelX, y + 1, availableTextW, rowH - 5);
       ctx.clip();
 
-      text(`${s.id}. ${s.name}`, labelX, y + 11, 11, C.white);
+      text(`${s.id}. ${getStageName(s)}`, labelX, y + 11, 11, C.white);
       text(
         s.worldUnlock ? (world === 2 ? "解放済み" : `${s.cost}G / WORLD 2を解放`) :
         (owned ? `購入済み / 報酬 ${s.reward}G` : `${s.cost}G / 報酬 ${s.reward}G`),
@@ -1880,6 +1886,7 @@
   }
 
   function drawBattle() {
+    if (world === 2) { for (const p of world2Platforms) { rect(p.x,p.y,p.w,p.h,"#7cecff"); rect(p.x,p.y-3,p.w,3,"#bca5ff"); } }
     for (const enemy of enemies) drawEnemy(enemy);
 
     for (const warning of strikeWarnings) {
@@ -1962,7 +1969,7 @@
     );
 
     text(
-      world === 2 ? "MOVE: A/D OR ARROWS   JUMP: W / UP   ESC: PAUSE" : "MOVE: WASD / ARROWS   ESC: PAUSE",
+      world === 2 ? "MOVE: A/D   JUMP: HOLD W/UP   DOWN: DROP THROUGH PLATFORM   ESC: PAUSE" : "MOVE: WASD / ARROWS   ESC: PAUSE",
       W / 2, H - 12, 10, C.muted, "center"
     );
 
