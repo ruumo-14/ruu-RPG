@@ -665,7 +665,6 @@
       gravity: false,
       gravityAccel: 0,
       bounce: false,
-      bounceCount: 0,
       stomped: false,
       stompLife: 0,
       stompable: world2 && radius >= 9
@@ -1341,7 +1340,7 @@
         if (bullet.waveLife <= 0) bullet.dead = true;
       }
 
-      // WORLD 2では、落下中の弾の上に着地して踏める。踏まれた弾は短時間だけ足場になる。
+      // WORLD 2の攻撃弾は通常の当たり判定のみ。足場は専用の platforms で管理する。
       const fallingOntoBall =
         world === 2 && bullet.stompable && !bullet.dead && !bullet.stomped &&
         gravityVelocity >= 0 && bullet.vy >= 0 &&
@@ -1959,7 +1958,7 @@
 
     drawPlayer();
 
-    text(`WORLD ${world}  ·  STAGE ${stage}`, 14, 20, 13);
+    text(world === 2 ? `WORLD 2 · ${WORLD2_STAGE_NAMES[stage - 1] || "魂の試練"}` : `WORLD 1 · STAGE ${stage}`, 14, 20, 13);
     text(`TIME ${elapsed.toFixed(1)}s`, 14, 40, 11, C.muted);
     text(`GOLD ${gold}`, W - 14, 20, 13, C.gold, "right");
 
