@@ -57,6 +57,9 @@
   let jumpWasHeld = false;
   let world2BoneTimer = 1.2;
   let world2BallTimer = 1.8;
+  let world2Platforms = [];
+  let platformDropTimer = 0;
+  let downWasHeld = false;
   let enemies = [];
   let shotTimers = [];
   let radialTimers = [];
@@ -107,6 +110,19 @@
   ];
 
   const unlockedStages = new Set([1]);
+  const WORLD2_STAGE_NAMES = ["青い魂の試練","骨の回廊","重力の檻","四方の砲門","逃げ場なき波状攻撃","青い槍の雨","追尾する魂","骨の迷宮","最後の足場","審判の間"];
+  const getStageName = s => world === 2 ? (WORLD2_STAGE_NAMES[s.id - 1] || ("魂の試練 " + s.id)) : s.name;
+  function buildWorld2Platforms() {
+    const layouts = [
+      [[.20,.70,.22],[.58,.56,.20]], [[.08,.72,.22],[.39,.58,.20],[.70,.43,.20]],
+      [[.12,.62,.19],[.41,.76,.18],[.68,.54,.20],[.38,.36,.18]], [[.05,.68,.17],[.29,.49,.17],[.55,.66,.17],[.78,.44,.17]],
+      [[.16,.74,.18],[.42,.59,.16],[.67,.43,.18]], [[.08,.55,.17],[.34,.72,.16],[.59,.52,.16],[.79,.34,.15]],
+      [[.11,.72,.16],[.34,.48,.16],[.57,.66,.16],[.77,.43,.15]], [[.05,.63,.15],[.27,.42,.15],[.49,.65,.15],[.71,.43,.15],[.84,.62,.12]],
+      [[.08,.74,.15],[.29,.57,.14],[.49,.40,.14],[.69,.57,.14],[.83,.74,.12]], [[.08,.69,.15],[.29,.48,.14],[.49,.30,.14],[.69,.48,.14],[.83,.69,.12]]
+    ];
+    world2Platforms = (layouts[stage - 1] || []).map(([x,y,w]) => ({x:x*W,y:y*H,w:w*W,h:8}));
+    platformDropTimer = 0; downWasHeld = false;
+  }
 
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const rand = (a, b) => a + Math.random() * (b - a);
@@ -601,6 +617,8 @@
     jumpWasHeld = false;
     world2BoneTimer = 1.0;
     world2BallTimer = 1.6;
+    world2Platforms = []; platformDropTimer = 0; downWasHeld = false;
+    if (world === 2) buildWorld2Platforms();
 
     edgeTimer = stage === 2 ? 1.2 : 2.8;
     stage4SwitchTimer = 0.25;
@@ -643,9 +661,9 @@
       r: radius,
       color,
       dead: false,
-      // WORLD 2は弾にも強い重力が働き、直線だけでは避けられない放物線軌道になる。
-      gravity: world2,
-      gravityAccel: world2 ? 620 + stage * 55 : 0,
+      // 弾には重力を適用しない。重力はプレイヤーのジャンプだけに使う。
+      gravity: false,
+      gravityAccel: 0,
       bounce: false,
       bounceCount: 0,
       stomped: false,
