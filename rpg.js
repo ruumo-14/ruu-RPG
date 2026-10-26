@@ -845,7 +845,7 @@
               if (k === rowGap) continue;
               bullets.push({
                 x: fromLeft ? -14 - row * 20 : W + 14 + row * 20,
-                y: H - 48 - row * 34 + rand(-3, 3),
+                y: H - 23 - row * 13 + rand(-2, 2),
                 vx: (fromLeft ? 1 : -1) * (190 + stage * 12 + tier * 18),
                 vy: rand(-8, 8), r: 6, color: row ? "#bca5ff" : "#e8edf4",
                 dead: false, gravity: true, gravityAccel: 80 + stage * 8,
