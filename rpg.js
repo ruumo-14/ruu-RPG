@@ -54,6 +54,9 @@
   let triangles = [];
   let gravityVelocity = 0;
   let jumpHoldTime = 0;
+  let jumpWasHeld = false;
+  let world2BoneTimer = 1.2;
+  let world2BallTimer = 1.8;
   let enemies = [];
   let shotTimers = [];
   let radialTimers = [];
@@ -497,6 +500,7 @@
     player.y = H * 0.78;
     gravityVelocity = 0;
     jumpHoldTime = 0;
+    jumpWasHeld = false;
   }
 
   function showTitle() {
@@ -594,6 +598,9 @@
     triangles = [];
     gravityVelocity = 0;
     jumpHoldTime = 0;
+    jumpWasHeld = false;
+    world2BoneTimer = 1.0;
+    world2BallTimer = 1.6;
 
     edgeTimer = stage === 2 ? 1.2 : 2.8;
     stage4SwitchTimer = 0.25;
@@ -636,10 +643,10 @@
       r: radius,
       color,
       dead: false,
-      // WORLD 2の弾は重力で軌道が曲がり、床で跳ね返る。
+      // WORLD 2は弾にも強い重力が働き、直線だけでは避けられない放物線軌道になる。
       gravity: world2,
-      gravityAccel: world2 ? 250 + stage * 18 : 0,
-      bounce: world2,
+      gravityAccel: world2 ? 620 + stage * 55 : 0,
+      bounce: false,
       bounceCount: 0,
       stomped: false,
       stompLife: 0,
@@ -790,31 +797,29 @@
       player.y = clamp(player.y + dy * player.speed * speedMultiplier * dt, 45, H - 18);
       gravityVelocity = 0;
     } else {
-      const stompPlatform = bullets.find(b =>
-        b.stomped && Math.abs(player.x - b.x) < player.r + b.r * 0.78 &&
-        Math.abs((player.y + player.r) - (b.y - b.r)) < 6
-      );
-      const grounded = player.y >= H - 19 || !!stompPlatform;
+      // WORLD 2は床でのみ通常ジャンプ。踏みつけジャンプは弾との衝突時に直接発動する。
+      const grounded = player.y >= H - 19 - 0.5;
       const jumpHeld = keys.has("ArrowUp") || keys.has("KeyW") || keys.has("Space") || touchDirs.has("up");
+      const jumpPressed = jumpHeld && !jumpWasHeld;
       if (grounded) {
-        player.y = stompPlatform ? stompPlatform.y - stompPlatform.r - player.r : H - 19;
-        if (jumpHeld) {
-          gravityVelocity = -300;
+        player.y = H - 19;
+        if (jumpPressed) {
+          gravityVelocity = -420;
           jumpHoldTime = 0;
         } else {
           gravityVelocity = 0;
         }
       }
       if (!grounded || gravityVelocity < 0) {
-        if (gravityVelocity < 0 && jumpHeld && jumpHoldTime < 0.42) {
-          // 押し続けている間だけ上昇を長く維持。短押しならすぐ落下へ。
+        if (gravityVelocity < 0 && jumpHeld && jumpHoldTime < 0.34) {
+          // 短押しは低く、長押しは重力を弱めて高く跳ぶ。
           jumpHoldTime += dt;
-          gravityVelocity += 190 * dt;
+          gravityVelocity += 180 * dt;
         } else {
-          if (gravityVelocity < -110 && !jumpHeld) gravityVelocity *= 0.82;
-          gravityVelocity += 900 * dt;
+          gravityVelocity += 1250 * dt;
         }
       }
+      jumpWasHeld = jumpHeld;
       player.y = clamp(player.y + gravityVelocity * dt, 45, H - 19);
       if (player.y >= H - 19) { gravityVelocity = 0; jumpHoldTime = 0; }
     }
@@ -824,6 +829,48 @@
       const e = enemies[0] || { x: W * 0.5, y: H * 0.2 };
       shotTimers[0] = (shotTimers[0] ?? 0) - dt * attackRateMultiplier;
       radialTimers[0] = (radialTimers[0] ?? 0) - dt * attackRateMultiplier;
+      // WORLD 2 stages 1-9 share a rising difficulty platforming layer:
+      // low bone rows demand a timed jump, while heavy falling balls can be stomped.
+      if (stage < 10) {
+        world2BoneTimer -= dt * attackRateMultiplier;
+        world2BallTimer -= dt * attackRateMultiplier;
+        if (world2BoneTimer <= 0) {
+          const count = Math.min(10, 5 + Math.floor(stage / 2) + Math.floor(tier / 2));
+          const gap = Math.floor(rand(0, count));
+          const fromLeft = Math.random() < 0.5;
+          const rows = stage >= 6 ? 2 : 1;
+          for (let row = 0; row < rows; row++) {
+            const rowGap = row === 0 ? gap : (gap + Math.max(2, Math.floor(count / 2))) % count;
+            for (let k = 0; k < count; k++) {
+              if (k === rowGap) continue;
+              bullets.push({
+                x: fromLeft ? -14 - row * 20 : W + 14 + row * 20,
+                y: H - 48 - row * 34 + rand(-3, 3),
+                vx: (fromLeft ? 1 : -1) * (190 + stage * 12 + tier * 18),
+                vy: rand(-8, 8), r: 6, color: row ? "#bca5ff" : "#e8edf4",
+                dead: false, gravity: true, gravityAccel: 80 + stage * 8,
+                bone: true, stompable: false
+              });
+            }
+          }
+          world2BoneTimer = Math.max(1.25, 3.6 - stage * 0.19 - tier * 0.12);
+        }
+        if (world2BallTimer <= 0) {
+          const count = stage >= 7 ? 2 : 1;
+          for (let i = 0; i < count; i++) {
+            bullets.push({
+              x: rand(35, W - 35), y: rand(24, 72),
+              vx: rand(-45, 45), vy: 70 + stage * 8,
+              r: 11 + Math.min(7, Math.floor(stage / 2) + Math.floor(tier / 2)),
+              color: i % 2 ? "#bca5ff" : "#7cecff", dead: false,
+              gravity: true, gravityAccel: 760 + stage * 55 + tier * 35,
+              stompable: true, stomped: false, stompLife: 0, heavyBall: true
+            });
+          }
+          world2BallTimer = Math.max(1.1, 2.9 - stage * 0.13 - tier * 0.1);
+        }
+      }
+
       if (stage === 1) {
         if (shotTimers[0] <= 0) {
           for (let k=0;k<6;k++) { const a=patternTick*0.55+k*Math.PI/3; fire(e.x,e.y,a,155+tier*8,"#7cecff",4); fire(e.x,e.y,a+Math.PI/6,115+tier*6,"#bca5ff",3); }
@@ -1355,7 +1402,7 @@
         player.y = bullet.y - bullet.r - player.r;
         // 踏んだ瞬間に自動ジャンプ。キーを押していなければ最小ジャンプ、
         // 長押しすれば上昇時間が延びて飛距離が伸びる。
-        gravityVelocity = -300;
+        gravityVelocity = -420;
         jumpHoldTime = 0;
         bullet.stomped = true;
         bullet.stompLife = 0.12;
